@@ -1,0 +1,14 @@
+{
+  "name": "@wiyit/wiy",
+  "version": "1.0.0-beta.5",
+  "description": "JavaScript framework for building web application.",
+  "main": "src/wiy.js",
+  "keywords": [
+    "wiy"
+  ],
+  "author": "wiyit",
+  "license": "MIT",
+  "dependencies": {
+    "uuid": "^10.0.0"
+  }
+}
