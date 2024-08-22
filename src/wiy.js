@@ -235,6 +235,16 @@ console.log(OBSERVER_MANAGER, OBSERVER_STACK);
 
 
 
+const wiyEnv = {
+    get publicPath() {
+        try {
+            return process.env.WIY.PUBLIC_PATH;
+        } catch {
+        }
+    }
+};
+
+
 
 
 
@@ -710,7 +720,7 @@ class App extends EventTarget {
         this._config.container ||= document.body;
 
         router.addEventListener('init', () => {
-            router.setBase(this._config.base);
+            router.updateStatus();
         });
         router.addEventListener('change', e => {
             if (e.data.path) {
@@ -759,7 +769,7 @@ class Router extends EventTarget {
                 value: config,
             },
             _base: {
-                value: '/',
+                value: wiyEnv.publicPath,
                 writable: true,
             },
             _current: {
@@ -776,14 +786,6 @@ class Router extends EventTarget {
         window.addEventListener('popstate', () => {
             this.updateStatus();
         });
-    }
-
-    setBase(base = '/') {
-        if (!base.endsWith('/')) {
-            base += '/';
-        }
-        this._base = base;
-        this.updateStatus();
     }
 
     updateStatus(change = true) {
