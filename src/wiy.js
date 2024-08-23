@@ -257,6 +257,9 @@ class Component extends EventTarget {
     constructor(config = {}) {
         super();
         Object.defineProperties(this, {
+            _rawThis: {
+                value: this,
+            },
             _proxyThis: {
                 value: tryCreateProxy(this),
             },
@@ -326,6 +329,16 @@ class Component extends EventTarget {
 
     getUuid() {
         return this._uuid;
+    }
+
+    setData(data) {
+        Object.entries(data || {}).forEach(([name, value]) => {
+            this._proxyThis[name] = value;
+        });
+    }
+
+    trigger(eventType, data) {
+        this._rawThis.dispatchEvent(new WiyEvent(eventType, data));
     }
 
     addChild(component) {
@@ -432,16 +445,18 @@ class Component extends EventTarget {
     }
 
     async observe(func, callback) {
-        OBSERVER_STACK.push(new Observer(() => {
-            callback(func());
-        }));
-        let result;
-        try {
-            result = func();
-        } finally {
-            OBSERVER_STACK.pop();
-            await callback(result);
-        }
+        const startObserve = async () => {
+            OBSERVER_STACK.push(observer);
+            try {
+                return await callback(func());
+            } finally {
+                OBSERVER_STACK.pop();
+            }
+        };
+        const observer = new Observer(() => {
+            startObserve();
+        });
+        return await startObserve();
     }
 
     async renderNode(node, extraContext) {
@@ -462,13 +477,15 @@ class Component extends EventTarget {
 
     async renderTextOrAttr(node, extraContext) {
         const originNodeValue = node.nodeValue;
+        let firstRender = true;
         let prevResult;
         await this.observe(() => {
             return this.renderString(originNodeValue, extraContext);
         }, (result) => {
-            if (prevResult == result) {
+            if (!firstRender && prevResult == result) {
                 return;
             }
+            firstRender = false;
             prevResult = node.nodeValue = result;
         });
     }
@@ -483,6 +500,7 @@ class Component extends EventTarget {
             return;
         }
         const listeners = {};
+        let bindData;
         await Promise.all(Array.from(node.attributes).map(async attrNode => {
             await this.renderNode(attrNode, extraContext);
             const attrName = attrNode.nodeName;
@@ -500,39 +518,64 @@ class Component extends EventTarget {
                     listeners[eventType] = eventHandler;
                 } else if (attrName == 'wiy:data') {
                     let bindAttrName;
+                    let eventType;
                     switch (node.nodeName) {
                         case 'INPUT':
                             switch (node.getAttribute('type')) {
                                 case 'checkbox':
                                 case 'radio':
                                     bindAttrName = 'checked';
+                                    eventType = 'change';
                                     break;
                                 default:
                                     bindAttrName = 'value';
+                                    eventType = 'change';
                                     break;
                             }
                             break;
                         case 'TEXTAREA':
                         case 'SELECT':
                             bindAttrName = 'value';
+                            eventType = 'change';
                             break;
+                        default:
+                            if (this._config.components[node.nodeName]) {
+                                eventType = 'change';
+                                bindData = (component) => {
+                                    this.observe(() => {
+                                        return this.renderValue(attrValue, extraContext);
+                                    }, (result) => {
+                                        component.setData(result);
+                                    });
+                                };
+                                break;
+                            }
                     }
-                    this.observe(() => {
-                        return this.renderValue(attrValue, extraContext);
-                    }, (result) => {
-                        node[bindAttrName] = result || '';
-                    });
-                    node.addEventListener('change', () => {
-                        this.renderValue(`${attrValue}=__newValue__`, {
-                            ...extraContext,
-                            __newValue__: node[bindAttrName],
+                    if (eventType) {
+                        this.observe(() => {
+                            return this.renderValue(attrValue, extraContext);
+                        }, (result) => {
+                            if (typeof result == 'undefined') {
+                                delete node[bindAttrName];
+                            } else {
+                                node[bindAttrName] = result;
+                            }
                         });
-                    });
+                        const eventHandler = (e) => {
+                            this.renderValue(`${attrValue}=__newValue__`, {
+                                ...extraContext,
+                                __newValue__: e instanceof WiyEvent ? e.data : node[bindAttrName],
+                            });
+                        };
+                        node.addEventListener(eventType, eventHandler);
+                        listeners[eventType] = eventHandler;
+                    }
                 }
             }
         }));
         if (this._config.components[node.nodeName]) {
-            await this.renderComponent(node, extraContext, listeners);
+            const component = await this.renderComponent(node, extraContext, listeners);
+            bindData && bindData(component);
         } else {
             if (node.nodeName == 'LINK') {
                 await this.renderLink(node, extraContext);
@@ -651,7 +694,7 @@ class Component extends EventTarget {
     }
 
     async renderComponent(node, extraContext, listeners) {
-        await new Promise(async (resolve) => {
+        return new Promise(async (resolve) => {
             const define = await loadComponentDefine(this._config.components[node.nodeName]);
             const config = {
                 name: node.nodeName,
@@ -667,7 +710,7 @@ class Component extends EventTarget {
             component.addEventListener('init', async () => {
                 // this.addChild(component);//先临时去掉，因为未找到防止内存泄露的办法
                 await component.replaceTo(node);
-                resolve();
+                resolve(component);
             });
         });
     }
@@ -739,7 +782,7 @@ class App extends EventTarget {
             const showPage = async (page) => {
                 this._config.container.innerHTML = '';
                 await page.appendTo(this._config.container);
-                resolve();
+                resolve(page);
             };
 
             const key = JSON.stringify(info);

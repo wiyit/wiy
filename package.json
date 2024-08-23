@@ -4,6 +4,9 @@
   "description": "JavaScript framework for building web application.",
   "scripts": {},
   "main": "src/wiy.js",
+  "files": [
+    "src/"
+  ],
   "keywords": [
     "wiy"
   ],
