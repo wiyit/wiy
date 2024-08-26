@@ -172,7 +172,7 @@ const isProxyObj = (obj) => {
     return typeof obj == 'object' && !!obj._proxyUuid;
 };
 const tryCreateProxy = (obj) => {
-    if (typeof obj != 'object' || isProxyObj(obj)) {
+    if (typeof obj != 'object' || isProxyObj(obj) || obj instanceof Date) {
         return obj;
     }
     const proxyObj = new Proxy(obj, {
