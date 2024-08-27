@@ -120,7 +120,6 @@ export default {
 ```
 提供js：
 ```javascript
-'🌌🌞🌏🌛🪐🌟🌠';
 export default {
     data: {
         objList: ['🌌', '🌞', '🌏', '🌛', '🪐', '🌟', '🌠'],
@@ -164,7 +163,6 @@ export default {
 ```
 提供js：
 ```javascript
-'🌌🌞🌏🌛🪐🌟🌠';
 export default {
     data: {
         a1: false,
