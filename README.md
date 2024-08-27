@@ -143,7 +143,7 @@ export default {
 <input wiy:data="this.a1" type="checkbox" />{{this.a1}}
 <button wiy:onclick="this.a1 =! this.a1">点我</button>
 <hr>
-<input wiy:data="this.a2" type="radio" value="1" />{{this.a2}}
+<input wiy:data="this.a2" type="radio" />{{this.a2}}
 <button wiy:onclick="this.a2 =! this.a2">点我</button>
 <hr>
 <input wiy:data="this.a3" type="text" />{{this.a3}}
