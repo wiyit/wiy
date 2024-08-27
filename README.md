@@ -179,6 +179,30 @@ export default {
 ## 响应式更新
 ## 数据观察器
 ## 事件机制
+支持事件机制。在逻辑中使用this.on、this.off、this.trigger函数即可实现事件的监听及触发。
+
+提供js：
+```javascript
+export default {
+    methods: {
+        foo() {
+            // 监听事件
+            this.on('customevent', (e) => {
+                console.log('got event', e);            
+            });
+            // 停止监听事件
+            this.off('customevent');
+        },
+        bar() {
+            // 触发事件，并传递数据
+            this.trigger('customevent', {
+                a: 22,
+                b: 23,           
+            });
+        },
+    }
+}
+```
 ## 模板管理
 支持引入模板。只需要在逻辑中配置模板文件的引入路径，即可使用该模板进行渲染。需要使用wiy-cli构建项目。
 
