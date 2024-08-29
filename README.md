@@ -4,7 +4,7 @@
 - **模块化**：模板、样式、逻辑、资源，皆可自由拼装。
 - **组件化**：组件职责分明，继承与复用，随心所欲。
 - **响应式**：数据微动，全局共鸣。
-# 起步
+# wiy起步
 创建一个wiy项目：
 ```shell
 npm create @wiyit/wiy
@@ -18,7 +18,133 @@ npm install
 npm run dev
 ```
 以上命令执行成功后，会自动打开一个浏览器标签页，如果看到“Welcome to wiy!”字样，恭喜你！你的wiy项目启动成功了！
-# 能力
+## 项目结构
+一个wiy项目的结构通常如下：
+```
+/                           项目根目录
+┣━ public/                  ┣━ 存放公共文件，如favicon.ico等文件，该目录下的文件不会被wiy-cli所构建
+┣━ src/                     ┣━ 存放源代码文件，该目录下的文件会被wiy-cli所构建
+┃  ┣━ assets/               ┃  ┣━ 存放公共资源文件，包括公共的模板、样式、字体、图片、音频、视频、svg、json等各种资源
+┃  ┣━ components/           ┃  ┣━ 存放组件相关文件，该目录下的组件可根据具体情况再划分不同层级的目录
+┃  ┃  ┣━ component1/        ┃  ┃  ┣━ 存放某个组件的相关文件
+┃  ┃  ┃  ┣━ assets/         ┃  ┃  ┃  ┣━ 存放该组件内部用到的资源文件，包括字体、图片、音频、视频、svg、json等各种资源
+┃  ┃  ┃  ┣━ component1.css  ┃  ┃  ┃  ┣━ 该组件的样式文件
+┃  ┃  ┃  ┣━ component1.html ┃  ┃  ┃  ┣━ 该组件的模板文件
+┃  ┃  ┃  ┗━ component1.js   ┃  ┃  ┃  ┗━ 该组件的逻辑文件，也是该组件的入口文件
+┃  ┃  ┗━ ...                ┃  ┃  ┗━ 其他组件……
+┃  ┣━ pages/                ┃  ┣━ 存放页面组件相关文件，该目录下的结构与components相似
+┃  ┗━ app.js                ┃  ┗━ 应用文件，也是该项目的入口文件
+┣━ package.json             ┣━ Node.js的项目配置文件
+┗━ wiy.config.*.js          ┗━ wiy配置文件，可根据具体情况划分不同的配置文件，如dev、test、prod等
+```
+# wiy概念
+在wiy的世界中，`应用（app）`是由一系列`组件（component）`组合而成的，而`组件`又是由一系列`模块（module）`拼装而成的。
+## 应用 app
+定义了以下内容：
+- 应用引用的页面组件
+- 应用首页
+- 应用生命周期
+
+一个应用的示例如下（app.js）：
+```javascript
+import wiy from '@wiyit/wiy';
+
+new wiy.App({
+    pages: {//该应用引用的页面组件，key是页面访问路径，value是动态导入的页面组件
+        'page/first': import('./pages/page1/page1.js'),
+        'page/second': import('./pages/page2/page2.js'),
+    },
+    index: 'page/first',//应用首页访问路径
+    lifecycle: {//各个生命周期函数
+        init() {
+            console.log('应用初始化成功');
+        },
+    },
+});
+```
+## 组件 component
+定义了以下内容：
+- 组件模板
+- 组件样式
+- 组件引用的其他组件
+- 组件数据
+- 组件方法
+- 组件生命周期
+
+一个组件的示例如下（例如component1.js）：
+```javascript
+export default {
+    template: import('./component1.html'),//动态导入的模板
+    style: import('./component1.css'),//动态导入的样式
+    components: {//该组件引用的其他组件，key是使用该组件时所用的标签名称，value是动态导入的组件
+        Component2: import('../component2/component2.js'),
+        Component3: import('../component3/component3.js'),
+    },
+    data: {//组件的所有数据
+        currentTime: new Date(),
+    },
+    methods: {//组件的所有方法
+        updateTime() {
+            this.currentTime = new Date();
+        },
+    },
+    lifecycle: {//各个生命周期函数
+        init() {
+            setInterval(() => {
+                this.updateTime();
+            }, 1000);
+        },
+    },
+};
+```
+## 模块 module
+模块是组件中会用到的各种资源，包括模板、样式、字体、图片、音频、视频、svg、json等各种资源。模块有以下几种使用方式：
+- 在组件中使用。支持使用模板、样式、json等模块，例如在component1.js中：
+  ```javascript
+  export default {
+      template: import('./component1.html'),//使用模板
+      style: import('./component1.css'),//使用样式
+      methods: {
+          async loadJson() {
+              const module = await import('./assets/info.json');//使用json
+              console.log(module.default);
+          },
+      },
+  };
+  ```
+- 在模板中使用。支持使用图片、音频、视频、svg等模块，例如在component1.html中：
+  ```html
+  <!-- 使用图片 -->
+  <img src="./assets/image.png" />
+  <!-- 使用svg -->
+  <img src="./assets/loading.svg" />
+  <!-- 使用音频 -->
+  <audio src="./assets/audio.wav"></audio>
+  <!-- 使用视频 -->
+  <video src="./assets/video.mp4"></video>
+  ```
+- 在样式中使用，支持使用样式、字体、图片、svg等模块，例如在component1.css中：
+  ```css
+  /* 使用样式 */
+  @import url('../../assets/common.css');
+
+  @font-face {
+      font-family: 'font-name';
+      /* 使用字体 */
+      src: url('../../assets/font.woff');
+  }
+
+  div {
+      /* 使用图片 */
+      background-image: url('./assets/image.png');
+  }
+
+  .loading {
+      /* 使用svg */
+      background-image: url('./assets/loading.svg');
+  }
+  ```
+# wiy能力
 ## 模板渲染
 支持mustache语法模板渲染，支持text节点内容、属性节点内容的渲染。通过双大括号将表达式的值渲染到html中。
 
