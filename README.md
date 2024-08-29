@@ -21,21 +21,21 @@ npm run dev
 ## 项目结构
 一个wiy项目的结构通常如下：
 ```
-/                           项目根目录
-┣━ public/                  存放公共文件，如favicon.ico等文件，该目录下的文件不会被wiy-cli所构建
-┣━ src/                     存放源代码文件，该目录下的文件会被wiy-cli所构建
-|  ┣━ assets/               存放公共资源文件，包括公共的模板、样式、字体、图片、音频、视频、svg、json等各种资源
-|  ┣━ components/           存放组件相关文件，该目录下的组件可根据具体情况再划分不同层级的目录
-|  |  ┣━ component1/        存放某个组件的相关文件
-|  |  |  ┣━ assets/         存放该组件内部用到的资源文件，包括字体、图片、音频、视频、svg、json等各种资源
-|  |  |  ┣━ component1.css  该组件的样式文件
-|  |  |  ┣━ component1.html 该组件的模板文件
-|  |  |  ┗━ component1.j    该组件的逻辑文件，也是该组件的入口文件
-|  |  ┗━ ...                其他组件……
-|  ┣━ pages/                存放页面组件相关文件，该目录下的结构与components相似
-|  ┗━ app.js                应用文件，也是该项目的入口文件
-┣━ package.json             Node.js的项目配置文件
-┗━ wiy.config.*.js          wiy配置文件，可根据具体情况划分不同的配置文件，如dev、test、prod等
+/								项目根目录
+┣━ public/						存放公共文件，如favicon.ico等文件，该目录下的文件不会被wiy-cli所构建
+┣━ src/							存放源代码文件，该目录下的文件会被wiy-cli所构建
+┃	┣━ assets/					存放公共资源文件，包括公共的模板、样式、字体、图片、音频、视频、svg、json等各种资源
+┃	┣━ components/				存放组件相关文件，该目录下的组件可根据具体情况再划分不同层级的目录
+┃	┃	┣━ component1/			存放某个组件的相关文件
+┃	┃	┃	┣━ assets/			存放该组件内部用到的资源文件，包括字体、图片、音频、视频、svg、json等各种资源
+┃	┃	┃	┣━ component1.css	该组件的样式文件
+┃	┃	┃	┣━ component1.html	该组件的模板文件
+┃	┃	┃	┗━ component1.js	该组件的逻辑文件，也是该组件的入口文件
+┃	┃	┗━ ...					其他组件……
+┃	┣━ pages/					存放页面组件相关文件，该目录下的结构与components相似
+┃	┗━ app.js					应用文件，也是该项目的入口文件
+┣━ package.json					Node.js的项目配置文件
+┗━ wiy.config.*.js				wiy配置文件，可根据具体情况划分不同的配置文件，如dev、test、prod等
 ```
 # wiy概念
 在wiy的世界中，`应用（app）`是由一系列`组件（component）`组合而成的，而`组件`又是由一系列`模块（module）`拼装而成的。
