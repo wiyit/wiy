@@ -31,7 +31,7 @@ npm run dev
 |   |   |   |-- component1.css  该组件的样式文件
 |   |   |   |-- component1.html 该组件的模板文件
 |   |   |   |-- component1.js   该组件的逻辑文件，也是该组件的入口文件
-|   |   |-- ...                 其他组件……
+|   |   |-- others...           其他组件……
 |   |-- pages/                  存放页面组件相关文件，该目录下的结构与components相似
 |   |-- app.js                  应用文件，也是该项目的入口文件
 |-- package.json                Node.js的项目配置文件
