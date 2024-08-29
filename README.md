@@ -30,12 +30,12 @@ npm run dev
 |   |   |   |-- assets/         存放该组件内部用到的资源文件，包括字体、图片、音频、视频、svg、json等各种资源
 |   |   |   |-- component1.css  该组件的样式文件
 |   |   |   |-- component1.html 该组件的模板文件
-|   |   |   |-- component1.js   该组件的逻辑文件，也是该组件的入口文件
-|   |   |-- ...                 其他组件……
+|   |   |   --- component1.js   该组件的逻辑文件，也是该组件的入口文件
+|   |   --- ...                 其他组件……
 |   |-- pages/                  存放页面组件相关文件，该目录下的结构与components相似
-|   |-- app.js                  应用文件，也是该项目的入口文件
+|   --- app.js                  应用文件，也是该项目的入口文件
 |-- package.json                Node.js的项目配置文件
-|-- wiy.config.*.js             wiy配置文件，可根据具体情况划分不同的配置文件，如dev、test、prod等
+--- wiy.config.*.js             wiy配置文件，可根据具体情况划分不同的配置文件，如dev、test、prod等
 ```
 # wiy概念
 在wiy的世界中，`应用（app）`是由一系列`组件（component）`组合而成的，而`组件`又是由一系列`模块（module）`拼装而成的。
