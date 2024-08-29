@@ -325,6 +325,9 @@ class Component extends EventTarget {
         Object.entries(this._config.data || {}).forEach(([name, value]) => {
             this[name] = value;
         });
+        await Promise.all(Object.entries(this._config.dataBinders || {}).map(async ([name, value]) => {
+            await value(this);
+        }));
     }
 
     getUuid() {
@@ -335,6 +338,10 @@ class Component extends EventTarget {
         Object.entries(data || {}).forEach(([name, value]) => {
             this._proxyThis[name] = value;
         });
+    }
+
+    attr(name) {
+        return this._config.attrs[name];
     }
 
     trigger(eventType, data) {
@@ -500,7 +507,7 @@ class Component extends EventTarget {
             return;
         }
         const listeners = {};
-        let bindData;
+        const dataBinders = {};
         await Promise.all(Array.from(node.attributes).map(async attrNode => {
             await this.renderNode(attrNode, extraContext);
             const attrName = attrNode.nodeName;
@@ -516,36 +523,38 @@ class Component extends EventTarget {
                     };
                     node.addEventListener(eventType, eventHandler);
                     listeners[eventType] = eventHandler;
-                } else if (attrName == 'wiy:data') {
-                    let bindAttrName;
+                } else if (attrName.startsWith('wiy:data')) {
+                    let bindAttrName = attrName.startsWith('wiy:data-') ? attrName.slice(9) : undefined;
                     let eventType;
                     switch (node.nodeName) {
                         case 'INPUT':
                             switch (node.getAttribute('type')) {
                                 case 'checkbox':
                                 case 'radio':
-                                    bindAttrName = 'checked';
+                                    bindAttrName ||= 'checked';
                                     eventType = 'change';
                                     break;
                                 default:
-                                    bindAttrName = 'value';
+                                    bindAttrName ||= 'value';
                                     eventType = 'change';
                                     break;
                             }
                             break;
                         case 'TEXTAREA':
                         case 'SELECT':
-                            bindAttrName = 'value';
+                            bindAttrName ||= 'value';
                             eventType = 'change';
                             break;
                         default:
                             if (this._config.components[node.nodeName]) {
                                 eventType = 'change';
-                                bindData = (component) => {
-                                    this.observe(() => {
+                                dataBinders[bindAttrName || ''] = async (component) => {
+                                    await this.observe(() => {
                                         return this.renderValue(attrValue, extraContext);
                                     }, (result) => {
-                                        component.setData(result);
+                                        component.setData(bindAttrName ? {
+                                            [bindAttrName]: result,
+                                        } : result);
                                     });
                                 };
                                 break;
@@ -562,9 +571,19 @@ class Component extends EventTarget {
                             }
                         });
                         const eventHandler = (e) => {
+                            let newValue;
+                            if (e instanceof WiyEvent) {
+                                if (bindAttrName) {
+                                    newValue = e.data[bindAttrName];
+                                } else {
+                                    newValue = e.data;
+                                }
+                            } else {
+                                newValue = node[bindAttrName];
+                            }
                             this.renderValue(`${attrValue}=__newValue__`, {
                                 ...extraContext,
-                                __newValue__: e instanceof WiyEvent ? e.data : node[bindAttrName],
+                                __newValue__: newValue,
                             });
                         };
                         node.addEventListener(eventType, eventHandler);
@@ -574,8 +593,7 @@ class Component extends EventTarget {
             }
         }));
         if (this._config.components[node.nodeName]) {
-            const component = await this.renderComponent(node, extraContext, listeners);
-            bindData && bindData(component);
+            const component = await this.renderComponent(node, extraContext, listeners, dataBinders);
         } else {
             if (node.nodeName == 'LINK') {
                 await this.renderLink(node, extraContext);
@@ -693,7 +711,7 @@ class Component extends EventTarget {
         }));
     }
 
-    async renderComponent(node, extraContext, listeners) {
+    async renderComponent(node, extraContext, listeners, dataBinders) {
         return new Promise(async (resolve) => {
             const define = await loadComponentDefine(this._config.components[node.nodeName]);
             const config = {
@@ -701,6 +719,7 @@ class Component extends EventTarget {
                 attrs: getElementAttrs(node),
                 content: node.innerHTML,
                 listeners,
+                dataBinders,
                 app: this._config.app,
             };
             const component = new Component({
