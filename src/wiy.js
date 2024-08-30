@@ -320,7 +320,9 @@ class Component extends EventTarget {
             this.addEventListener(name, this._config.lifecycle[name] = value.bind(this._proxyThis));
         });
         Object.entries(this._config.listeners || {}).forEach(([name, value]) => {
-            this.addEventListener(name, value);
+            value.forEach(listener => {
+                this.addEventListener(name, listener);
+            });
         });
         Object.entries(this._config.data || {}).forEach(([name, value]) => {
             this[name] = value;
@@ -336,12 +338,18 @@ class Component extends EventTarget {
 
     setData(data) {
         Object.entries(data || {}).forEach(([name, value]) => {
-            this._proxyThis[name] = value;
+            if (typeof value != 'undefined') {
+                this._proxyThis[name] = value;
+            }
         });
     }
 
     attr(name) {
         return this._config.attrs[name];
+    }
+
+    on(eventType, listener) {
+        this._rawThis.addEventListener(eventType, listener);
     }
 
     trigger(eventType, data) {
@@ -522,7 +530,10 @@ class Component extends EventTarget {
                         }
                     };
                     node.addEventListener(eventType, eventHandler);
-                    listeners[eventType] = eventHandler;
+                    listeners[eventType] = [
+                        ...(listeners[eventType] || []),
+                        eventHandler,
+                    ];
                 } else if (attrName.startsWith('wiy:data')) {
                     let bindAttrName = attrName.startsWith('wiy:data-') ? attrName.slice(9) : undefined;
                     let eventType;
@@ -560,7 +571,7 @@ class Component extends EventTarget {
                                 break;
                             }
                     }
-                    if (eventType) {
+                    if (bindAttrName) {
                         this.observe(() => {
                             return this.renderValue(attrValue, extraContext);
                         }, (result) => {
@@ -570,6 +581,8 @@ class Component extends EventTarget {
                                 node[bindAttrName] = result;
                             }
                         });
+                    }
+                    if (eventType) {
                         const eventHandler = (e) => {
                             let newValue;
                             if (e instanceof WiyEvent) {
@@ -587,7 +600,10 @@ class Component extends EventTarget {
                             });
                         };
                         node.addEventListener(eventType, eventHandler);
-                        listeners[eventType] = eventHandler;
+                        listeners[eventType] = [
+                            ...(listeners[eventType] || []),
+                            eventHandler,
+                        ];
                     }
                 }
             }
