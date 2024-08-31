@@ -5,6 +5,7 @@
 - **组件化**：组件职责分明，继承与复用，随心所欲。
 - **响应式**：数据微动，全局共鸣。
 # wiy起步
+## 项目创建
 创建一个wiy项目：
 ```shell
 npm create @wiyit/wiy
@@ -37,12 +38,64 @@ npm run dev
 |-- package.json                Node.js的项目配置文件
 |-- wiy.config.*.js             wiy配置文件，可根据具体情况划分不同的配置文件，如dev、test、prod等
 ```
+## 项目配置
+在wiy项目中，可根据具体情况划分不同的配置文件，一个配置文件的示例如下（wiy.config.dev.js）：
+```javascript
+module.exports = {
+    //env用于定义环境变量
+    env: {
+        //WIY是wiy保留的环境变量
+        WIY: {
+            DEV: true,//是否以开发模式构建项目，并启动开发服务器。默认为false
+            PUBLIC_PATH: '/customPath/',//项目部署后的路径，当项目需要部署到网站的子路径下时，可使用该配置。默认为/
+            BUILD_DIST: 'dist/dev',//项目构建到本地的目录。默认为dist
+        },
+        //以下是自定义环境变量
+        CUSTOM_PROPERTY_1: '',//支持任何类型的js属性值
+        CUSTOM_PROPERTY_2: {//支持多层级，即对象嵌套
+            A: '',
+            B: '',
+        },
+    },
+    //以下是自定义的webpack配置，可用来覆盖默认配置
+    entry: {
+        app: './src/app.js',
+    },
+    output: {
+        filename: '[hash].bundle.js',
+        clean: true,
+    },
+};
+```
+wiy采用这样的配置文件来配置项目所用到的环境变量及构建配置。
+- 在环境变量方面，wiy支持多层级、任何类型的环境变量。在项目中访问环境变量的方式为：`process.env.${环境变量的路径}`，例如`process.env.CUSTOM_PROPERTY_2.A`可访问到`CUSTOM_PROPERTY_2`中的`A`属性的值。
+- 在构建配置方面，wiy默认使用wiy-cli来构建项目，而wiy-cli基于webpack实现，包含默认的构建配置。因此大部分情况下，你只需要使用env属性来定义环境变量即可，除非有必要，才需要自定义的webpack配置。
+
+编辑好配置文件之后，即可在命令行中使用wiy命令来运行或构建项目：
+```shell
+wiy --config wiy.config.dev.js
+```
+- 当环境变量`WIY.DEV`为`true`时，该命令会以开发模式构建项目，并启动开发服务器，然后自动打开一个浏览器标签页运行项目，此后对代码进行任何编辑，都会在浏览器中自动刷新。
+- 当环境变量`WIY.DEV`为`false`时，该命令仅会以生产模式构建项目，并自动对构建后的产物进行优化（如代码合并、压缩、tree shaking等），构建产物所在目录由环境变量`WIY.BUILD_DIST`指定。
+
+也可将以上命令配置在package.json的`scripts`中，例如：
+```json
+{
+  "scripts": {
+    "dev": "wiy --config wiy.config.dev.js",
+    "build-test": "wiy --config wiy.config.test.js",
+    "build-prod": "wiy --config wiy.config.prod.js"
+  }
+}
+```
+即可直接通过`npm run dev`或`npm run build-test`等来快捷使用wiy命令。
 # wiy概念
 在wiy的世界中，`应用（app）`是由一系列`组件（component）`组合而成的，而`组件`又是由一系列`模块（module）`拼装而成的。
 ## 应用 app
 定义了以下内容：
 - 应用引用的页面组件
 - 应用首页
+- 应用使用的插件
 - 应用生命周期
 
 一个应用的示例如下（app.js）：
@@ -55,6 +108,10 @@ new wiy.App({
         'page/second': import('./pages/page2/page2.js'),
     },
     index: 'page/first',//应用首页访问路径
+    plugins: [//该应用使用的插件列表
+        import('@wiyit/wiy-ui'),
+        import('other-custom-plugin'),
+    ],
     lifecycle: {//各个生命周期函数
         init() {
             console.log('应用初始化成功');
@@ -145,7 +202,7 @@ export default {
   }
   ```
 # wiy能力
-## 模板渲染
+## 基础渲染
 支持mustache语法模板渲染，支持text节点内容、属性节点内容的渲染。通过双大括号将表达式的值渲染到html中。
 
 提供html：
@@ -165,8 +222,9 @@ export default {
 ```html
 <div id="23">🌏</div>
 ```
+## 富文本渲染 wiy:html
 ## 条件渲染 wiy:if
-支持根据一个条件表达式控制是否渲染。
+支持根据一个条件表达式控制是否渲染。注意：当同时使用wiy:if和wiy:for时，wiy:if的优先级高于wiy:for。
 
 提供html：
 ```html
@@ -189,7 +247,7 @@ export default {
 <div>🌞</div>
 ```
 ## 列表渲染 wiy:for
-支持根据一个表达式的项目来渲染多项内容。wiy:for支持数组、对象，另外还可通过wiy:for.key和wiy:for.value来自定义key和value的变量名。
+支持根据一个表达式的项目来渲染多项内容。wiy:for支持数组、对象，另外还可通过wiy:for.key和wiy:for.value来自定义key和value的变量名。注意：当同时使用wiy:if和wiy:for时，wiy:if的优先级高于wiy:for。
 
 提供html：
 ```html
@@ -232,7 +290,7 @@ export default {
 <div>f: 🌟</div>
 <div>g: 🌠</div>
 ```
-## 事件绑定 wiy:onxxxx
+## 事件绑定 wiy:onxxx
 支持给标签绑定事件。wiy:on后紧跟事件类型，不区分大小写。支持原生事件及组件自定义事件，支持内联表达式或函数引用。
 
 提供html：
@@ -261,7 +319,7 @@ export default {
 你将得到两个按钮，点击任何一个按钮，都会在按钮上轮流展示各个天体：
 
 ![image](https://github.com/user-attachments/assets/34867787-9713-4fc2-8e1a-17c97598e948)
-## 数据绑定 wiy:data
+## 数据绑定 wiy:data-xxx
 支持给标签绑定数据。支持原生表单标签（input、textarea、select）及自定义组件，数据为双向绑定。
 
 提供html：
@@ -302,9 +360,10 @@ export default {
 你将得到多个表单标签，其数据实现了双向绑定：
 
 ![image](https://github.com/user-attachments/assets/ff0372c5-ef47-48e8-8e93-36b1616f47a8)
+## 插槽
 ## 响应式更新
 ## 数据观察器
-## 事件机制
+## 事件管理
 支持事件机制。在逻辑中使用this.on、this.off、this.trigger函数即可实现事件的监听及触发。
 
 提供js：
@@ -351,4 +410,10 @@ export default {
 ## 组件继承
 ## 路由
 ## 插件
+## 应用生命周期
+# wiy生态
+## 核心框架 wiy
+## UI组件库 wiy-ui
+## 命令行界面 wiy-cli
+## 脚手架 create-wiy
 
