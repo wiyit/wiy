@@ -225,7 +225,7 @@ export default {
         objId: 23,
         objName: '🌏',
     },
-}
+};
 ```
 你将得到：
 ```html
@@ -238,7 +238,7 @@ export default {
 ```html
 <div id="{{this.objId}}">
     {{this.objName}}
-    <div wiy:html="this.objInfo"></div>
+    <template wiy:html="this.objInfo"></template>
 </div>
 ```
 提供js逻辑：
@@ -249,13 +249,13 @@ export default {
         objName: '🌏',
         objInfo: '<span style="color: green;">是我们赖以生存的家园。</span>',
     },
-}
+};
 ```
 你将得到：
 ```html
 <div id="23">
     🌏
-    <div><span style="color: green;">是我们赖以生存的家园。</span></div>
+    <span style="color: green;">是我们赖以生存的家园。</span>
 </div>
 ```
 ## 条件渲染 wiy:if
@@ -275,7 +275,7 @@ export default {
         objId2: 24,
         objName2: '🌛',
     },
-}
+};
 ```
 你将得到：
 ```html
@@ -305,7 +305,7 @@ export default {
             g: '🌠',
         },
     },
-}
+};
 ```
 你将得到：
 ```html
@@ -353,6 +353,24 @@ export default {
 ```
 你将得到两个按钮，点击任何一个按钮，都会在按钮上轮流展示各个天体。
 ## 数据绑定 wiy:data-xxx
+支持给标签绑定数据。wiy:data-后紧跟属性名称，不区分大小写。支持原生html标签及自定义组件。
+
+提供html模板：
+```html
+<input wiy:data-disabled="this.inputDisabled" type="text" />
+
+<Component3 wiy:data-username="this.customUsername"></Component3>
+```
+提供js逻辑：
+```javascript
+export default {
+    data: {
+        inputDisabled: true,
+        customUsername: '🌏',
+    },
+};
+```
+你将得到一个被禁用的输入框和一个自定义组件Component3，Component3中的`username`值为`🌏`。
 ## 双向数据绑定 wiy:data
 支持给标签绑定数据（双向）。支持原生表单标签（input、textarea、select）及自定义组件。
 - 对于**原生表单标签**，wiy:data默认绑定一个属性。`input[type=checkbox]`、`input[type=radio]`的默认绑定属性为`checked`，其余标签的默认绑定属性为`value`。
@@ -360,28 +378,18 @@ export default {
 
 提供html模板：
 ```html
-<input wiy:data="this.a1" type="checkbox" />{{this.a1}}
-<button wiy:onclick="this.a1 =! this.a1">点我</button>
-<hr>
-<input wiy:data="this.a2" type="radio" />{{this.a2}}
-<button wiy:onclick="this.a2 =! this.a2">点我</button>
-<hr>
-<input wiy:data="this.a3" type="text" />{{this.a3}}
-<button wiy:onclick="this.a3 += '🌏'">点我</button>
-<hr>
+<input wiy:data="this.a1" type="checkbox" />
+<input wiy:data="this.a2" type="radio" />
+<input wiy:data="this.a3" type="text" />
 <textarea wiy:data="this.a4"></textarea>
-<pre>{{this.a4}}</pre>
-<button wiy:onclick="this.a4 += '🌏'">点我</button>
-<hr>
 <select wiy:data="this.a5">
     <option value="">请选择：</option>
-    <option value="1">一</option>
-    <option value="2">二</option>
-    <option value="3">三</option>
-</select>{{this.a5}}
-<button wiy:onclick="this.a5 = this.a5 % 3 + 1">点我</button>
+    <option value="1">🌞</option>
+    <option value="2">🌏</option>
+    <option value="3">🌛</option>
+</select>
 
-<Component3 wiy:data="a6"></Component3>
+<Component3 wiy:data="this.a6"></Component3>
 ```
 提供js逻辑：
 ```javascript
@@ -399,10 +407,68 @@ export default {
     },
 };          
 ```
-你将得到多个表单标签以及一个自定义组件Component3，其数据实现了双向绑定。
-## 插槽
+你将得到多个表单标签以及一个自定义组件Component3，其数据实现了双向绑定。其中，Component3中绑定了两个属性：`prop1`和`prop2`。
+## 插槽 wiy:slot
+支持在自定义组件中使用插槽。子组件可通过预留插槽，来允许父组件向其内部插入内容。子组件在`slot`标签上可使用`name`属性来命名，然后父组件在`template`标签上使用`wiy:slot`来与其对应。
+
+提供子组件（Component3）html模板：
+```html
+<div>
+    <h2>My title</h2>
+    <slot></slot>
+    <slot name="other"></slot>
+</div>
+```
+提供父组件html模板：
+```html
+<Component3>
+    Default slot content. 默认插槽内容。
+    <template wiy:slot="other">
+        Named slot content. 具名插槽内容。
+    </template>
+</Component3>
+```
+你将得到：
+```html
+<Component3>
+    <div>
+        <h2>My title</h2>
+        Default slot content. 默认插槽内容。
+        Named slot content. 具名插槽内容。
+    </div>
+</Component3>
+```
 ## 响应式更新
+支持数据响应式更新。在wiy中，当你改变了组件中的任何数据（无论是基础数据类型，还是对象、数组中的深层内容），页面上的内容都会自动响应变化，不需要手动操作dom。支持的范围包括：
+- 文本渲染
+- 富文本渲染 wiy:html
+- 条件渲染 wiy:if
+- 列表渲染 wiy:for
+- 数据绑定 wiy:data-xxx
+- 双向数据绑定 wiy:data
+- 插槽 wiy:slot
 ## 数据观察器
+支持自定义数据观察器。当你需要在组件中监听一些数据的变化时，可以使用this.observe函数来创建一个数据观察器。当你观察的数据发生任何变化时，都会触发你设置的回调函数。
+
+提供js逻辑：
+```javascript
+export default {
+    data: {
+        a: '',
+        b: '',
+    },
+    methods: {
+        foo() {
+            //创建数据观察器
+            this.observe(() => {
+                return this.a + this.b;//这里可以是任何表达式，只要你用到的组件数据，都会被观察
+            }, (result) => {//观察回调函数，每当上面的组件数据发生变化时，都会触发回调
+                console.log(result);
+            });
+        },
+    },
+};
+```
 ## 事件管理
 支持事件机制。在逻辑中使用this.on、this.off、this.trigger函数即可实现事件的监听及触发。
 
@@ -411,41 +477,70 @@ export default {
 export default {
     methods: {
         foo() {
-            // 监听事件
+            //监听事件
             this.on('customevent', (e) => {
                 console.log('got event', e);            
             });
-            // 停止监听事件
+            //停止监听事件
             this.off('customevent');
         },
         bar() {
-            // 触发事件，并传递数据
+            //触发事件，并传递数据
             this.trigger('customevent', {
                 a: 22,
                 b: 23,           
             });
         },
     }
-}
+};
 ```
 ## 模板管理
-支持引入模板。只需要在逻辑中配置模板文件的引入路径，即可使用该模板进行渲染。需要使用wiy-cli构建项目。
+支持引入模板文件。只需要在逻辑中配置模板文件的引入路径，即可使用该模板进行渲染。
 
 提供js逻辑：
 ```javascript
 export default {
     template: import('./template.html'),
-}
+};
 ```
 ## 样式管理
-支持引入样式。只需要在逻辑中配置样式文件的引入路径，即可将样式应用于模板。需要使用wiy-cli构建项目。
+支持引入样式文件、在模板中添加`style`标签、内联`style`属性等多种方式来定义样式。样式只作用于对应组件，不会影响到其他组件。
+- **引入样式文件**：最佳支持。只需要在逻辑中配置样式文件的引入路径，即可将样式应用于模板。该样式文件涉及到的所有url()及@import的资源模块及其深层引用都会被wiy-cli解析处理。
 
-提供js逻辑：
-```javascript
-export default {
-    style: import('./style.css'),
-}
-```
+  提供js逻辑：
+  ```javascript
+  export default {
+      style: import('./style.css'),
+  };
+  ```
+- **模板style标签**：基础支持。在模板中添加`style`标签，也可将样式应用于模板。支持基础的url()和@import，不支持@import的样式文件中包括深层的url()和@import。
+
+  提供html模板：
+  ```html
+  <style>
+      @import url('../../assets/common.css');
+
+      @font-face {
+          font-family: 'font-name';
+          src: url('../../assets/font.woff');
+      }
+  
+      div {
+          background-image: url('./assets/image.png');
+      }
+    
+      .loading {
+          background-image: url('./assets/loading.svg');
+      }
+  </style>
+  ```
+- **内联style属性**：简单支持。在其他标签的style属性中定义样式，可将样式应用于对应标签上。只支持基础属性，不支持url()和@import。
+
+  提供html模板：
+  ```html
+  <div style="background-color: red;">
+  </div>
+  ```
 ## 组件生命周期
 ## 组件继承
 ## 路由
