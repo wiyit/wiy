@@ -1,10 +1,11 @@
 # wiy哲学
-- **极简**：抛弃繁琐，直达本质。
-- **配置式**：让逻辑隐于配置。
-- **模块化**：模板、样式、逻辑、资源，皆可自由拼装。
-- **组件化**：组件职责分明，继承与复用，随心所欲。
-- **响应式**：数据微动，全局共鸣。
+1. **极简**：抛弃繁琐，直达本质。
+2. **配置式**：让逻辑隐于配置。
+3. **模块化**：模板、样式、逻辑、资源，皆可自由拼装。
+4. **组件化**：组件职责分明，继承与复用，随心所欲。
+5. **响应式**：数据微动，全局共鸣。
 # wiy起步
+wiy遵从极简、配置式的思想，因此你可以通过很简单的方式，进行简单配置，即可启动一个wiy项目。
 ## 项目创建
 创建一个wiy项目：
 ```shell
@@ -39,7 +40,7 @@ npm run dev
 |-- wiy.config.*.js             wiy配置文件，可根据具体情况划分不同的配置文件，如dev、test、prod等
 ```
 ## 项目配置
-在wiy项目中，可根据具体情况划分不同的配置文件，一个配置文件的示例如下（wiy.config.dev.js）：
+在wiy项目中，可根据具体情况划分不同的配置文件，一个配置文件的示例如下（例如wiy.config.dev.js）：
 ```javascript
 module.exports = {
     //env用于定义环境变量
@@ -68,10 +69,10 @@ module.exports = {
 };
 ```
 wiy采用这样的配置文件来配置项目所用到的环境变量及构建配置。
-- 在环境变量方面，wiy支持多层级、任何类型的环境变量。在项目中访问环境变量的方式为：`process.env.${环境变量的路径}`，例如`process.env.CUSTOM_PROPERTY_2.A`可访问到`CUSTOM_PROPERTY_2`中的`A`属性的值。
-- 在构建配置方面，wiy默认使用wiy-cli来构建项目，而wiy-cli基于webpack实现，包含默认的构建配置。因此大部分情况下，你只需要使用env属性来定义环境变量即可，除非有必要，才需要自定义的webpack配置。
-
-编辑好配置文件之后，即可在命令行中使用wiy命令来运行或构建项目：
+- **环境变量**：wiy支持多层级、任何类型的环境变量。在项目中访问环境变量的方式为：`process.env.${环境变量的路径}`，例如`process.env.CUSTOM_PROPERTY_2.A`可访问到`CUSTOM_PROPERTY_2`中的`A`属性的值。
+- **构建配置**：wiy默认使用wiy-cli来构建项目，而wiy-cli基于webpack实现，包含默认的构建配置。因此大部分情况下，你只需要使用env属性来定义环境变量即可，除非有必要，才需要自定义的webpack配置。
+## 项目运行
+有了配置文件，即可在命令行中使用wiy命令来运行或构建项目：
 ```shell
 wiy --config wiy.config.dev.js
 ```
@@ -88,9 +89,9 @@ wiy --config wiy.config.dev.js
   }
 }
 ```
-即可直接通过`npm run dev`或`npm run build-test`等来快捷使用wiy命令。
+即可直接通过`npm run dev`或`npm run build-test`等来运行或构建项目。
 # wiy概念
-在wiy的世界中，`应用（app）`是由一系列`组件（component）`组合而成的，而`组件`又是由一系列`模块（module）`拼装而成的。
+在wiy的世界中，一个项目就是一个`应用（app）`，`应用`是由一系列`组件（component）`组合而成的，而`组件`又是由一系列`模块（module）`拼装而成的。
 ## 应用 app
 定义了以下内容：
 - 应用引用的页面组件
@@ -154,6 +155,14 @@ export default {
     },
 };
 ```
+对应的模板示例如下（component1.html）：
+```html
+<div>Current Time: {{this.currentTime}}</div>
+<!-- 使用自定义组件Component2： -->
+<Component2></Component2>
+<!-- 使用自定义组件Component3： -->
+<Component3></Component3>
+```
 ## 模块 module
 模块是组件中会用到的各种资源，包括模板、样式、字体、图片、音频、视频、svg、json等各种资源。模块有以下几种使用方式：
 - 在组件中使用。支持使用模板、样式、json等模块，例如在component1.js中：
@@ -164,7 +173,7 @@ export default {
       methods: {
           async loadJson() {
               const module = await import('./assets/info.json');//使用json
-              console.log(module.default);
+              return module.default;
           },
       },
   };
@@ -202,14 +211,14 @@ export default {
   }
   ```
 # wiy能力
-## 基础渲染
-支持mustache语法模板渲染，支持text节点内容、属性节点内容的渲染。通过双大括号将表达式的值渲染到html中。
+## 文本渲染
+支持mustache语法模板渲染，支持text节点内容、属性节点内容的渲染。通过双大括号将表达式的值以`文本形式`渲染到html中。
 
-提供html：
+提供html模板：
 ```html
 <div id="{{this.objId}}">{{this.objName}}</div>
 ```
-提供js：
+提供js逻辑：
 ```javascript
 export default {
     data: {
@@ -223,15 +232,41 @@ export default {
 <div id="23">🌏</div>
 ```
 ## 富文本渲染 wiy:html
+支持将一个表达式的值以`富文本（html）形式`渲染到html中。
+
+提供html模板：
+```html
+<div id="{{this.objId}}">
+    {{this.objName}}
+    <div wiy:html="this.objInfo"></div>
+</div>
+```
+提供js逻辑：
+```javascript
+export default {
+    data: {
+        objId: 23,
+        objName: '🌏',
+        objInfo: '<span style="color: green;">是我们赖以生存的家园。</span>',
+    },
+}
+```
+你将得到：
+```html
+<div id="23">
+    🌏
+    <div><span style="color: green;">是我们赖以生存的家园。</span></div>
+</div>
+```
 ## 条件渲染 wiy:if
 支持根据一个条件表达式控制是否渲染。注意：当同时使用wiy:if和wiy:for时，wiy:if的优先级高于wiy:for。
 
-提供html：
+提供html模板：
 ```html
 <div wiy:if="this.objId1 < 23">{{this.objName1}}</div>
 <div wiy:if="this.objId2 < 23">{{this.objName2}}</div>
 ```
-提供js：
+提供js逻辑：
 ```javascript
 export default {
     data: {
@@ -249,13 +284,13 @@ export default {
 ## 列表渲染 wiy:for
 支持根据一个表达式的项目来渲染多项内容。wiy:for支持数组、对象，另外还可通过wiy:for.key和wiy:for.value来自定义key和value的变量名。注意：当同时使用wiy:if和wiy:for时，wiy:if的优先级高于wiy:for。
 
-提供html：
+提供html模板：
 ```html
 <div wiy:for="this.objList" wiy:for.key="k" wiy:for.value="v">{{k}}: {{v}}</div>
 <br>
 <div wiy:for="this.objMap">{{key}}: {{value}}</div>
 ```
-提供js：
+提供js逻辑：
 ```javascript
 export default {
     data: {
@@ -293,7 +328,7 @@ export default {
 ## 事件绑定 wiy:onxxx
 支持给标签绑定事件。wiy:on后紧跟事件类型，不区分大小写。支持原生事件及组件自定义事件，支持内联表达式或函数引用。
 
-提供html：
+提供html模板：
 ```html
 <button wiy:onclick="this.currentObjIndex = (this.currentObjIndex + 1) % this.objList.length">
     {{this.objList[this.currentObjIndex]}}
@@ -302,7 +337,7 @@ export default {
     {{this.objList[this.currentObjIndex]}}
 </button>
 ```
-提供js：
+提供js逻辑：
 ```javascript
 export default {
     data: {
@@ -316,13 +351,14 @@ export default {
     },
 };          
 ```
-你将得到两个按钮，点击任何一个按钮，都会在按钮上轮流展示各个天体：
-
-![image](https://github.com/user-attachments/assets/34867787-9713-4fc2-8e1a-17c97598e948)
+你将得到两个按钮，点击任何一个按钮，都会在按钮上轮流展示各个天体。
 ## 数据绑定 wiy:data-xxx
-支持给标签绑定数据。支持原生表单标签（input、textarea、select）及自定义组件，数据为双向绑定。
+## 双向数据绑定 wiy:data
+支持给标签绑定数据（双向）。支持原生表单标签（input、textarea、select）及自定义组件。
+- 对于**原生表单标签**，wiy:data默认绑定一个属性。`input[type=checkbox]`、`input[type=radio]`的默认绑定属性为`checked`，其余标签的默认绑定属性为`value`。
+- 对于**自定义组件**，wiy:data的值必须是一个对象，对象中的所有属性都会绑定到自定义组件中。当自定义组件内部的数据发生变化时，必须通过change事件将数据传出，来实现双向数据绑定。
 
-提供html：
+提供html模板：
 ```html
 <input wiy:data="this.a1" type="checkbox" />{{this.a1}}
 <button wiy:onclick="this.a1 =! this.a1">点我</button>
@@ -344,8 +380,10 @@ export default {
     <option value="3">三</option>
 </select>{{this.a5}}
 <button wiy:onclick="this.a5 = this.a5 % 3 + 1">点我</button>
+
+<Component3 wiy:data="a6"></Component3>
 ```
-提供js：
+提供js逻辑：
 ```javascript
 export default {
     data: {
@@ -354,19 +392,21 @@ export default {
         a3: '🌞',
         a4: '🌏\n🌛\n🪐\n🌟',
         a5: 2,
+        a6: {
+            prop1: '',
+            prop2: '',
+        },
     },
 };          
 ```
-你将得到多个表单标签，其数据实现了双向绑定：
-
-![image](https://github.com/user-attachments/assets/ff0372c5-ef47-48e8-8e93-36b1616f47a8)
+你将得到多个表单标签以及一个自定义组件Component3，其数据实现了双向绑定。
 ## 插槽
 ## 响应式更新
 ## 数据观察器
 ## 事件管理
 支持事件机制。在逻辑中使用this.on、this.off、this.trigger函数即可实现事件的监听及触发。
 
-提供js：
+提供js逻辑：
 ```javascript
 export default {
     methods: {
@@ -391,7 +431,7 @@ export default {
 ## 模板管理
 支持引入模板。只需要在逻辑中配置模板文件的引入路径，即可使用该模板进行渲染。需要使用wiy-cli构建项目。
 
-提供js：
+提供js逻辑：
 ```javascript
 export default {
     template: import('./template.html'),
@@ -400,7 +440,7 @@ export default {
 ## 样式管理
 支持引入样式。只需要在逻辑中配置样式文件的引入路径，即可将样式应用于模板。需要使用wiy-cli构建项目。
 
-提供js：
+提供js逻辑：
 ```javascript
 export default {
     style: import('./style.css'),
