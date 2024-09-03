@@ -81,12 +81,16 @@ const insertNodeAfter = (nodeToInsert, node) => {
     node.nextSibling ? insertNodeBefore(nodeToInsert, node.nextSibling) : node.parentNode.appendChild(nodeToInsert);
 };
 const loadComponentDefine = async (component) => {
-    //component应该是一个组件的定义，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个组件的定义
+    //component应该是一个组件的定义对象，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个组件的定义对象
     return component instanceof Promise ? (await component).default : component;
 };
 const loadSourceString = async (source) => {
     //source应该是一个字符串，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个字符串
     return source instanceof Promise ? (await source).default : source;
+};
+const loadPluginMethod = async (plugin) => {
+    //plugin应该是一个插件的安装函数，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个插件的安装函数
+    return plugin instanceof Promise ? (await plugin).default : plugin;
 };
 
 
@@ -166,8 +170,6 @@ class Observer {
         this._callback(target, prop);
     }
 }
-const OBSERVER_MANAGER = new ObserverManager();
-const OBSERVER_STACK = new Stack();
 const isProxyObj = (obj) => {
     return typeof obj == 'object' && !!obj._proxyUuid;
 };
@@ -231,7 +233,12 @@ const tryCreateProxy = (obj) => {
     });
     return proxyObj;
 };
-console.log(OBSERVER_MANAGER, OBSERVER_STACK);
+const OBSERVER_MANAGER = new ObserverManager();
+const OBSERVER_STACK = new Stack();
+
+
+
+
 
 
 
@@ -240,6 +247,7 @@ const wiyEnv = {
         try {
             return process.env.WIY.PUBLIC_PATH;
         } catch {
+            return '/';
         }
     }
 };
@@ -289,20 +297,12 @@ class Component extends EventTarget {
         this.init().then(() => {
             this.dispatchEvent(new Event('init'));
         });
-
-        //内存泄露监控
-        setInterval(() => {
-            const info = [this._children.size, this._managedNodes.size];
-            if (info[0] > 10 || info[1] > 40) {
-                console.warn(info);
-            }
-        }, 5000);
     }
 
     async init() {
         this._config.context = {
             wiy: {
-                router,
+                router: this._config.app._router,
             },
             this: this._proxyThis,
         };
@@ -476,7 +476,6 @@ class Component extends EventTarget {
 
     async renderNode(node, extraContext) {
         switch (node.nodeType) {
-            // case Node.COMMENT_NODE:
             case Node.TEXT_NODE:
             case Node.ATTRIBUTE_NODE:
                 await this.renderTextOrAttr(node, extraContext);
@@ -534,6 +533,8 @@ class Component extends EventTarget {
                         ...(listeners[eventType] || []),
                         eventHandler,
                     ];
+                } else if (attrName == 'wiy:html') {
+                    //TODO
                 } else if (attrName.startsWith('wiy:data')) {
                     let bindAttrName = attrName.startsWith('wiy:data-') ? attrName.slice(9) : undefined;
                     let eventType;
@@ -609,7 +610,7 @@ class Component extends EventTarget {
             }
         }));
         if (this._config.components[node.nodeName]) {
-            const component = await this.renderComponent(node, extraContext, listeners, dataBinders);
+            await this.renderComponent(node, extraContext, listeners, dataBinders);
         } else {
             if (node.nodeName == 'LINK') {
                 await this.renderLink(node, extraContext);
@@ -623,13 +624,6 @@ class Component extends EventTarget {
         if (node.getAttribute('rel') == 'stylesheet') {
             node.remove();
         }
-        // node.remove();
-        // const link = node.getAttribute('href');
-        // const style = document.createElement('script');
-        // style.type = 'module';
-        // style.src = link;
-        // style.innerHTML = console.log(await (await fetch(`${link}`)).text());
-        // node.replaceWith(style);
     }
 
     async renderIf(node, extraContext) {
@@ -681,7 +675,6 @@ class Component extends EventTarget {
                     value: prevValue,
                     node: prevNode,
                 } = prevData || {};
-                // console.log('render', key, value, prevValue, prevNode);
                 if (prevData && value == prevValue) {
                     map[key] = prevData;
                     currentPointer = prevNode;
@@ -690,7 +683,6 @@ class Component extends EventTarget {
 
                 let temp = prevNode || document.createComment('');
                 !prevNode && insertNodeAfter(temp, currentPointer);
-                // console.log('render2', key, value, prevValue, prevNode);
                 await this.observe(() => {
                     return result[key];//这一行是为了观察obj中该key对应的value的变化，这样的话当该key对应的value变化时才能被通知
                 }, async (value) => {
@@ -707,16 +699,8 @@ class Component extends EventTarget {
                         node: copyNode,
                     };
                 });
-                // console.log('render3', key, value, prevValue, prevNode);
                 currentPointer = temp;
             }
-            // console.log(map)
-            // nodesToDocumentFragment(prevMap.values().map(data => {
-            //     return data.node;
-            // }));
-            // insertNodeAfter(nodesToDocumentFragment(map.values().map(data => {
-            //     return data.node;
-            // })), pointer);
             prevMap = map;
         });
     }
@@ -743,7 +727,6 @@ class Component extends EventTarget {
                 ...config,
             });
             component.addEventListener('init', async () => {
-                // this.addChild(component);//先临时去掉，因为未找到防止内存泄露的办法
                 await component.replaceTo(node);
                 resolve(component);
             });
@@ -784,6 +767,9 @@ class App extends EventTarget {
             _pageCache: {
                 value: {},
             },
+            _router: {
+                value: new Router(),
+            },
         });
 
         this.init().then(() => {
@@ -792,21 +778,24 @@ class App extends EventTarget {
     }
 
     async init() {
+        await Promise.all((this._config.plugins || []).map(async plugin => {
+            const method = await loadPluginMethod(plugin);
+            await method(this);
+        }));
+
         Object.entries(this._config.lifecycle || {}).forEach(([name, value]) => {
             this.addEventListener(name, this._config.lifecycle[name] = value.bind(this));
         });
         this._config.container ||= document.body;
 
-        router.addEventListener('init', () => {
-            router.updateStatus();
-        });
-        router.addEventListener('change', e => {
+        this._router.addEventListener('change', e => {
             if (e.data.path) {
                 this.renderPage(e.data);
             } else {
-                router.go(this._config.index);
+                this._router.go(this._config.index);
             }
         });
+        this._router.updateStatus();
     }
 
     async renderPage(info) {
@@ -900,8 +889,6 @@ class Router extends EventTarget {
         history.forward();
     }
 }
-
-const router = new Router();
 
 class WiyEvent extends Event {
     constructor(type, data) {
