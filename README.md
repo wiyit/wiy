@@ -1,3 +1,5 @@
+# wiy定位
+wiy是一款极简主义的前端开发框架，目的只有一个：让前端开发简单点、再简单点。
 # wiy哲学
 1. **极简**：抛弃繁琐，直达本质。
 2. **配置式**：让逻辑隐于配置。
@@ -7,7 +9,7 @@
 # wiy起步
 wiy遵从极简、配置式的思想，因此你可以通过很简单的方式，进行简单配置，即可启动一个wiy项目。
 ## 项目创建
-创建一个wiy项目：
+需要提前安装好Node.js，然后使用以下命令创建一个wiy项目：
 ```shell
 npm create @wiyit/wiy
 ```
@@ -211,14 +213,15 @@ export default {
   }
   ```
 # wiy能力
+wiy提供全面的支持，以便开发者使用各种能力来开发前端项目。
 ## 文本渲染
 支持mustache语法模板渲染，支持text节点内容、属性节点内容的渲染。通过双大括号将表达式的值以`文本形式`渲染到html中。
 
-提供html模板：
+组件模板示例：
 ```html
 <div id="{{this.objId}}">{{this.objName}}</div>
 ```
-提供js逻辑：
+组件逻辑示例：
 ```javascript
 export default {
     data: {
@@ -234,14 +237,14 @@ export default {
 ## 富文本渲染 wiy:html
 支持将一个表达式的值以`富文本（html）形式`渲染到html中。
 
-提供html模板：
+组件模板示例：
 ```html
 <div id="{{this.objId}}">
     {{this.objName}}
     <template wiy:html="this.objInfo"></template>
 </div>
 ```
-提供js逻辑：
+组件逻辑示例：
 ```javascript
 export default {
     data: {
@@ -261,12 +264,12 @@ export default {
 ## 条件渲染 wiy:if
 支持根据一个条件表达式控制是否渲染。注意：当同时使用wiy:if和wiy:for时，wiy:if的优先级高于wiy:for。
 
-提供html模板：
+组件模板示例：
 ```html
 <div wiy:if="this.objId1 < 23">{{this.objName1}}</div>
 <div wiy:if="this.objId2 < 23">{{this.objName2}}</div>
 ```
-提供js逻辑：
+组件逻辑示例：
 ```javascript
 export default {
     data: {
@@ -284,13 +287,13 @@ export default {
 ## 列表渲染 wiy:for
 支持根据一个表达式的项目来渲染多项内容。wiy:for支持数组、对象，另外还可通过wiy:for.key和wiy:for.value来自定义key和value的变量名。注意：当同时使用wiy:if和wiy:for时，wiy:if的优先级高于wiy:for。
 
-提供html模板：
+组件模板示例：
 ```html
 <div wiy:for="this.objList" wiy:for.key="k" wiy:for.value="v">{{k}}: {{v}}</div>
 <br>
 <div wiy:for="this.objMap">{{key}}: {{value}}</div>
 ```
-提供js逻辑：
+组件逻辑示例：
 ```javascript
 export default {
     data: {
@@ -328,7 +331,7 @@ export default {
 ## 事件绑定 wiy:onxxx
 支持给标签绑定事件。wiy:on后紧跟事件类型，不区分大小写。支持原生事件及组件自定义事件，支持内联表达式或函数引用。
 
-提供html模板：
+组件模板示例：
 ```html
 <button wiy:onclick="this.currentObjIndex = (this.currentObjIndex + 1) % this.objList.length">
     {{this.objList[this.currentObjIndex]}}
@@ -337,7 +340,7 @@ export default {
     {{this.objList[this.currentObjIndex]}}
 </button>
 ```
-提供js逻辑：
+组件逻辑示例：
 ```javascript
 export default {
     data: {
@@ -355,13 +358,13 @@ export default {
 ## 数据绑定 wiy:data-xxx
 支持给标签绑定数据。wiy:data-后紧跟属性名称，不区分大小写。支持原生html标签及自定义组件。
 
-提供html模板：
+组件模板示例：
 ```html
 <input wiy:data-disabled="this.inputDisabled" type="text" />
 
 <Component3 wiy:data-username="this.customUsername"></Component3>
 ```
-提供js逻辑：
+组件逻辑示例：
 ```javascript
 export default {
     data: {
@@ -376,7 +379,7 @@ export default {
 - 对于**原生表单标签**，wiy:data默认绑定一个属性。`input[type=checkbox]`、`input[type=radio]`的默认绑定属性为`checked`，其余标签的默认绑定属性为`value`。
 - 对于**自定义组件**，wiy:data的值必须是一个对象，对象中的所有属性都会绑定到自定义组件中。当自定义组件内部的数据发生变化时，必须通过change事件将数据传出，来实现双向数据绑定。
 
-提供html模板：
+组件模板示例：
 ```html
 <input wiy:data="this.a1" type="checkbox" />
 <input wiy:data="this.a2" type="radio" />
@@ -391,7 +394,7 @@ export default {
 
 <Component3 wiy:data="this.a6"></Component3>
 ```
-提供js逻辑：
+组件逻辑示例：
 ```javascript
 export default {
     data: {
@@ -411,7 +414,7 @@ export default {
 ## 插槽 wiy:slot
 支持在自定义组件中使用插槽。子组件可通过预留插槽，来允许父组件向其内部插入内容。子组件在`slot`标签上可使用`name`属性来命名，然后父组件在`template`标签上使用`wiy:slot`来与其对应。
 
-提供子组件（Component3）html模板：
+子组件（Component3）模板示例：
 ```html
 <div>
     <h2>My title</h2>
@@ -419,7 +422,7 @@ export default {
     <slot name="other"></slot>
 </div>
 ```
-提供父组件html模板：
+父组件模板示例：
 ```html
 <Component3>
     Default slot content. 默认插槽内容。
@@ -450,7 +453,7 @@ export default {
 ## 数据观察器
 支持自定义数据观察器。当你需要在组件中监听一些数据的变化时，可以使用this.observe函数来创建一个数据观察器。当你观察的数据发生任何变化时，都会触发你设置的回调函数。
 
-提供js逻辑：
+组件逻辑示例：
 ```javascript
 export default {
     data: {
@@ -472,7 +475,7 @@ export default {
 ## 事件管理
 支持事件机制。在逻辑中使用this.on、this.off、this.trigger函数即可实现事件的监听及触发。
 
-提供js逻辑：
+组件逻辑示例：
 ```javascript
 export default {
     methods: {
@@ -497,7 +500,7 @@ export default {
 ## 模板管理
 支持引入模板文件。只需要在逻辑中配置模板文件的引入路径，即可使用该模板进行渲染。
 
-提供js逻辑：
+组件逻辑示例：
 ```javascript
 export default {
     template: import('./template.html'),
@@ -507,7 +510,7 @@ export default {
 支持引入样式文件、在模板中添加`style`标签、内联`style`属性等多种方式来定义样式。样式只作用于对应组件，不会影响到其他组件。
 - **引入样式文件**：最佳支持。只需要在逻辑中配置样式文件的引入路径，即可将样式应用于模板。该样式文件涉及到的所有url()及@import的资源模块及其深层引用都会被wiy-cli解析处理。
 
-  提供js逻辑：
+  组件逻辑示例：
   ```javascript
   export default {
       style: import('./style.css'),
@@ -515,7 +518,7 @@ export default {
   ```
 - **模板style标签**：基础支持。在模板中添加`style`标签，也可将样式应用于模板。支持基础的url()和@import，不支持@import的样式文件中包括深层的url()和@import。
 
-  提供html模板：
+  组件模板示例：
   ```html
   <style>
       @import url('../../assets/common.css');
@@ -536,19 +539,152 @@ export default {
   ```
 - **内联style属性**：简单支持。在其他标签的style属性中定义样式，可将样式应用于对应标签上。只支持基础属性，不支持url()和@import。
 
-  提供html模板：
+  组件模板示例：
   ```html
   <div style="background-color: red;">
   </div>
   ```
 ## 组件生命周期
+支持组件生命周期管理。在定义组件时，通过配置生命周期函数即可实现组件在不同生命周期的行为。
+
+组件逻辑示例：
+```javascript
+export default {
+    lifecycle: {//各个生命周期函数
+        init() {
+            console.log('组件初始化完成');
+        },
+    },
+};
+```
+你将在该组件初始化（即`init`生命周期）完成后看到控制台输出：组件初始化完成。
 ## 组件继承
+支持随心所欲的组件继承。得益于wiy模块化、组件化的哲学思想，你可以任意地组合各种资源模块，来继承原有组件，然后随心所欲地修改模板、样式、逻辑，创建你自己的组件！
+
+假设现在有一个组件A，其模板（a.html）、样式（a.css）、逻辑（a.js）分别为三个文件。其中a.js示例如下：
+```javascript
+export default {
+    template: import('./a.html'),
+    style: import('./a.css'),
+    //其他配置：
+};
+```
+你可以通过以下几种继承方式来创建你自己的组件B：
+- 继承方式1（**定制样式**）。在组件B的逻辑（b.js）中引入a.js，然后覆盖其中的`style`属性：
+  ```javascript
+  import ComponentA from 'path-to/a.js';//引入a.js
+
+  export default {
+      ...ComponentA,
+      style: import('./b.css'),//用b.css覆盖a.js中默认的a.css样式配置
+  };
+  ```
+  如果只想覆盖组件A的部分样式，还可以在组件B的样式（b.css）中引入a.css，然后覆盖其中的部分样式：
+  ```css
+  /* 引入a.css */
+  @import url('path-to/a.css');
+
+  /* 覆盖其中的部分样式 */
+  div {
+      background-color: red;
+  }
+  ```
+- 继承方式2（**定制模板**）。在组件B的逻辑（b.js）中引入a.js，然后覆盖其中的`template`属性：
+  ```javascript
+  import ComponentA from 'path-to/a.js';//引入a.js
+
+  export default {
+      ...ComponentA,
+      template: import('./b.html'),//用b.html覆盖a.js中默认的a.html模板配置
+  };
+  ```
+  通常情况下，定制模板后还需要定制样式，你可以直接结合使用。
+- 继承方式3（**定制逻辑**）。在组件B的逻辑（b.js）中引入a.js，然后覆盖其中的`data`、`methods`等属性：
+  ```javascript
+  import ComponentA from 'path-to/a.js';//引入a.js
+
+  export default {
+      ...ComponentA,
+      data: {
+          ...ComponentA.data,
+          //覆盖其中的部分数据：
+      },
+      methods: {
+          ...ComponentA.methods,
+          //覆盖其中的部分方法：
+      },
+      //也可以覆盖其他任何配置：
+  };
+  ```
 ## 路由
+支持应用路由。在组件逻辑中使用`wiy.router`的`go`、`back`、`forward`等方法即可控制路由。
+
+组件逻辑示例：
+```javascript
+export default {
+    methods: {
+        foo() {
+            //跳转指定路径
+            wiy.router.go('page/second', {
+                //可以给页面传一些参数
+            });
+
+            //后退
+            wiy.router.back();
+
+            //前进
+            wiy.router.forward();
+        },
+    },
+};
+```
 ## 插件
+支持在应用中使用插件。在app.js的`plugins`中引入对应插件即可。
+
+app.js：
+```javascript
+import wiy from '@wiyit/wiy';
+
+new wiy.App({
+    plugins: [//该应用使用的插件列表
+        import('@wiyit/wiy-ui'),
+        import('other-custom-plugin'),
+    ],
+});
+```
+插件必须默认导出一个函数，接收一个参数，应用会在初始化时使用当前应用的实例作为参数来调用这个函数。
 ## 应用生命周期
+支持应用生命周期管理。在app.js的`lifecycle`下配置生命周期函数即可实现应用在不同生命周期的行为。
+
+app.js：
+```javascript
+import wiy from '@wiyit/wiy';
+
+new wiy.App({
+    lifecycle: {//各个生命周期函数
+        init() {
+            console.log('应用初始化完成');
+        },
+    },
+});
+```
+你将在该应用初始化（即`init`生命周期）完成后看到控制台输出：应用初始化完成。
 # wiy生态
+wiy生态中开源了前端项目工程化所需的各种技术和工具，让前端项目的开发能够更加高效便捷。
 ## 核心框架 wiy
+wiy是wiy生态的核心，帮助开发者用极简的方式开发项目。
+
+开源地址：[https://github.com/wiyit/wiy](https://github.com/wiyit/wiy)
 ## UI组件库 wiy-ui
+wiy-ui是wiy官方提供的UI组件库，帮助开发者复用现成UI组件来快速开发项目。
+
+开源地址：[https://github.com/wiyit/wiy-ui](https://github.com/wiyit/wiy-ui)
 ## 命令行界面 wiy-cli
+wiy-cli是wiy官方提供的命令行界面，帮助开发者快速开发、构建wiy项目。
+
+开源地址：[https://github.com/wiyit/wiy-cli](https://github.com/wiyit/wiy-cli)
 ## 脚手架 create-wiy
+create-wiy是wiy官方提供的脚手架，帮助开发者快速创建一个wiy项目。
+
+开源地址：[https://github.com/wiyit/create-wiy](https://github.com/wiyit/create-wiy)
 
