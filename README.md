@@ -672,15 +672,19 @@ new wiy.App({
 # wiy生态
 wiy生态中开源了前端项目工程化所需的各种技术和工具，让前端项目的开发能够更加高效便捷。
 ## 核心框架 wiy
-wiy是wiy生态的核心，帮助开发者用极简的方式开发项目。开源地址：
-[https://github.com/wiyit/wiy](https://github.com/wiyit/wiy)
+wiy是wiy生态的核心，帮助开发者用极简的方式开发项目。
+
+开源地址：[https://github.com/wiyit/wiy](https://github.com/wiyit/wiy)
 ## UI组件库 wiy-ui
-wiy-ui是wiy官方提供的UI组件库，帮助开发者复用现成UI组件来快速开发项目。开源地址：
-[https://github.com/wiyit/wiy-ui](https://github.com/wiyit/wiy-ui)
+wiy-ui是wiy官方提供的UI组件库，帮助开发者复用现成UI组件来快速开发项目。
+
+开源地址：[https://github.com/wiyit/wiy-ui](https://github.com/wiyit/wiy-ui)
 ## 命令行界面 wiy-cli
-wiy-cli是wiy官方提供的命令行界面，帮助开发者快速开发、构建wiy项目。开源地址：
-[https://github.com/wiyit/wiy-cli](https://github.com/wiyit/wiy-cli)
+wiy-cli是wiy官方提供的命令行界面，帮助开发者快速开发、构建wiy项目。
+
+开源地址：[https://github.com/wiyit/wiy-cli](https://github.com/wiyit/wiy-cli)
 ## 脚手架 create-wiy
-create-wiy是wiy官方提供的脚手架，帮助开发者快速创建一个wiy项目。开源地址：
-[https://github.com/wiyit/create-wiy](https://github.com/wiyit/create-wiy)
+create-wiy是wiy官方提供的脚手架，帮助开发者快速创建一个wiy项目。
+
+开源地址：[https://github.com/wiyit/create-wiy](https://github.com/wiyit/create-wiy)
 
