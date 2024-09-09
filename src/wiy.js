@@ -313,11 +313,11 @@ class Component extends EventTarget {
         });
         Object.entries(this._config.methods || {}).forEach(([name, value]) => {
             Object.defineProperty(this, name, {
-                value: this._config.methods[name] = value.bind(this._proxyThis),
+                value: value.bind(this._proxyThis),
             });
         });
         Object.entries(this._config.lifecycle || {}).forEach(([name, value]) => {
-            this.addEventListener(name, this._config.lifecycle[name] = value.bind(this._proxyThis));
+            this.addEventListener(name, value.bind(this._proxyThis));
         });
         Object.entries(this._config.listeners || {}).forEach(([name, value]) => {
             value.forEach(listener => {
@@ -327,9 +327,9 @@ class Component extends EventTarget {
         Object.entries(this._config.data || {}).forEach(([name, value]) => {
             this[name] = value;
         });
-        await Promise.all(Object.entries(this._config.dataBinders || {}).map(async ([name, value]) => {
+        for (let [name, value] of Object.entries(this._config.dataBinders || {})) {
             await value(this);
-        }));
+        }
     }
 
     getUuid() {
@@ -429,8 +429,7 @@ class Component extends EventTarget {
         return parents;
     }
 
-    async renderNodes(extraContext) {
-        const element = document.createElement(`wiy-${this._config.name || this.constructor.name}`);
+    async mount(element) {
         setElementAttrs(element, {
             uuid: this._uuid,
             ...this._config.attrs,
@@ -443,8 +442,7 @@ class Component extends EventTarget {
         if (this._config.template) {
             root = element.attachShadow({ mode: 'closed' });
         }
-        root.innerHTML = await loadSourceString(this._config.template) || this._config.content;
-        await this.renderNode(root, extraContext);
+        root.innerHTML = await loadSourceString(this._config.template) || '';
 
         let cssCode = await loadSourceString(this._config.style) || '';
         if (cssCode) {
@@ -453,10 +451,12 @@ class Component extends EventTarget {
             const style = document.createElement('link');
             style.rel = 'stylesheet';
             style.href = URL.createObjectURL(new Blob([cssCode], { type: 'text/css' }));
-            root.appendChild(style);
+            root.prepend(style);
         }
 
-        return [element];
+        await this.renderNode(root);
+        element.wiyComponent = this;
+        this.dispatchEvent(new Event('mount'));
     }
 
     async observe(func, callback) {
@@ -515,7 +515,7 @@ class Component extends EventTarget {
         }
         const listeners = {};
         const dataBinders = {};
-        await Promise.all(Array.from(node.attributes).map(async attrNode => {
+        for (let attrNode of node.attributes) {
             await this.renderNode(attrNode, extraContext);
             const attrName = attrNode.nodeName;
             if (attrName.startsWith('wiy:')) {
@@ -534,7 +534,15 @@ class Component extends EventTarget {
                         eventHandler,
                     ];
                 } else if (attrName == 'wiy:html') {
-                    //TODO
+                    await this.observe(() => {
+                        return this.renderValue(attrValue, extraContext);
+                    }, (result) => {
+                        if (typeof result == 'undefined') {
+                            delete node.innerHTML;
+                        } else {
+                            node.innerHTML = result;
+                        }
+                    });
                 } else if (attrName.startsWith('wiy:data')) {
                     let bindAttrName = attrName.startsWith('wiy:data-') ? attrName.slice(9) : undefined;
                     let eventType;
@@ -558,7 +566,7 @@ class Component extends EventTarget {
                             eventType = 'change';
                             break;
                         default:
-                            if (this._config.components[node.nodeName]) {
+                            if (this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]) {
                                 eventType = 'change';
                                 dataBinders[bindAttrName || ''] = async (component) => {
                                     await this.observe(() => {
@@ -573,7 +581,7 @@ class Component extends EventTarget {
                             }
                     }
                     if (bindAttrName) {
-                        this.observe(() => {
+                        await this.observe(() => {
                             return this.renderValue(attrValue, extraContext);
                         }, (result) => {
                             if (typeof result == 'undefined') {
@@ -608,22 +616,30 @@ class Component extends EventTarget {
                     }
                 }
             }
-        }));
-        if (this._config.components[node.nodeName]) {
+        }
+
+        if (this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]) {
             await this.renderComponent(node, extraContext, listeners, dataBinders);
         } else {
-            if (node.nodeName == 'LINK') {
-                await this.renderLink(node, extraContext);
+            if (node.nodeName == 'SLOT') {
+                await this.renderSlot(node, extraContext);
             } else {
                 await this.renderChildNodes(node, extraContext);
             }
         }
     }
 
-    async renderLink(node, extraContext) {
-        if (node.getAttribute('rel') == 'stylesheet') {
-            node.remove();
+    async renderSlot(node, extraContext) {
+        const slotName = node.name || '';
+        let slotRenderer = this._config.slotRenderers[slotName];
+        if (!slotRenderer) {
+            slotRenderer = async () => {
+                await this.renderChildNodes(node, extraContext);
+                return nodesToDocumentFragment(node.childNodes);
+            };
         }
+        const slotContents = await slotRenderer();
+        node.replaceWith(slotContents);
     }
 
     async renderIf(node, extraContext) {
@@ -706,20 +722,39 @@ class Component extends EventTarget {
     }
 
     async renderChildNodes(node, extraContext) {
-        await Promise.all(Array.from(node.childNodes).map(async childNode => {
+        for (let childNode of node.childNodes) {
             await this.renderNode(childNode, extraContext);
-        }));
+        }
     }
 
     async renderComponent(node, extraContext, listeners, dataBinders) {
+        if (node.wiyComponent) {
+            return;
+        }
+
+        const slotRenderers = {};
+        for (let childNode of node.childNodes) {
+            if (childNode.nodeName == 'TEMPLATE') {
+                childNode.remove();
+                const slotName = childNode.getAttribute('wiy:slot') || '';
+                slotRenderers[slotName] = async () => {
+                    await this.renderNode(childNode.content, extraContext);
+                    return nodesToDocumentFragment(childNode.content.childNodes);
+                };
+            }
+        }
+        slotRenderers[''] = async () => {
+            await this.renderChildNodes(node, extraContext);
+            return nodesToDocumentFragment(node.childNodes);
+        };
+
         return new Promise(async (resolve) => {
-            const define = await loadComponentDefine(this._config.components[node.nodeName]);
+            const define = await loadComponentDefine(this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]);
             const config = {
-                name: node.nodeName,
                 attrs: getElementAttrs(node),
-                content: node.innerHTML,
                 listeners,
                 dataBinders,
+                slotRenderers,
                 app: this._config.app,
             };
             const component = new Component({
@@ -727,7 +762,7 @@ class Component extends EventTarget {
                 ...config,
             });
             component.addEventListener('init', async () => {
-                await component.replaceTo(node);
+                await component.mount(node);
                 resolve(component);
             });
         });
@@ -778,10 +813,24 @@ class App extends EventTarget {
     }
 
     async init() {
-        await Promise.all((this._config.plugins || []).map(async plugin => {
+        this._config.components ||= {};
+
+        Object.entries(this._config.components).forEach(([name, value]) => {
+            this._config.components[name.toUpperCase()] = value;
+        });
+
+        const cssCode = await loadSourceString(this._config.style) || '';
+        if (cssCode) {
+            const style = document.createElement('link');
+            style.rel = 'stylesheet';
+            style.href = URL.createObjectURL(new Blob([cssCode], { type: 'text/css' }));
+            document.head.appendChild(style);
+        }
+
+        for (let plugin of (this._config.plugins || [])) {
             const method = await loadPluginMethod(plugin);
             await method(this);
-        }));
+        }
 
         Object.entries(this._config.lifecycle || {}).forEach(([name, value]) => {
             this.addEventListener(name, this._config.lifecycle[name] = value.bind(this));
@@ -805,7 +854,9 @@ class App extends EventTarget {
         return new Promise(async (resolve) => {
             const showPage = async (page) => {
                 this._config.container.innerHTML = '';
-                await page.appendTo(this._config.container);
+                const node = document.createElement('wiy-page');
+                this._config.container.appendChild(node);
+                await page.mount(node);
                 resolve(page);
             };
 
@@ -825,6 +876,10 @@ class App extends EventTarget {
                 });
             }
         });
+    }
+
+    registerComponent(name, component) {
+        this._config.components[name.toUpperCase()] = component;
     }
 }
 
