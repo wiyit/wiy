@@ -454,7 +454,7 @@ class Component extends EventTarget {
             root.prepend(style);
         }
 
-        await this.renderNode(root);
+        await this.renderChildNodes(root);
         element.wiyComponent = this;
         this.dispatchEvent(new Event('mount'));
     }
@@ -506,17 +506,17 @@ class Component extends EventTarget {
 
     async renderElement(node, extraContext) {
         if (node.hasAttribute('wiy:if')) {
-            this.renderIf(node, extraContext);
+            await this.renderIf(node, extraContext);
             return;
         }
         if (node.hasAttribute('wiy:for')) {
-            this.renderFor(node, extraContext);
+            await this.renderFor(node, extraContext);
             return;
         }
         const listeners = {};
         const dataBinders = {};
         for (let attrNode of node.attributes) {
-            await this.renderNode(attrNode, extraContext);
+            await this.renderTextOrAttr(attrNode, extraContext);
             const attrName = attrNode.nodeName;
             if (attrName.startsWith('wiy:')) {
                 const attrValue = removeAttr(node, attrName);
@@ -664,7 +664,7 @@ class Component extends EventTarget {
             }
 
             const copyNode = node.cloneNode(true);
-            await this.renderNode(copyNode, extraContext);
+            await this.renderElement(copyNode, extraContext);
             insertNodeAfter(copyNode, pointer);
             prevNode = copyNode;
         });
@@ -703,7 +703,7 @@ class Component extends EventTarget {
                     return result[key];//这一行是为了观察obj中该key对应的value的变化，这样的话当该key对应的value变化时才能被通知
                 }, async (value) => {
                     const copyNode = node.cloneNode(true);
-                    await this.renderNode(copyNode, {
+                    await this.renderElement(copyNode, {
                         ...extraContext,
                         [keyName]: key,
                         [valueName]: value,
@@ -738,7 +738,7 @@ class Component extends EventTarget {
                 childNode.remove();
                 const slotName = childNode.getAttribute('wiy:slot') || '';
                 slotRenderers[slotName] = async () => {
-                    await this.renderNode(childNode.content, extraContext);
+                    await this.renderChildNodes(childNode.content, extraContext);
                     return nodesToDocumentFragment(childNode.content.childNodes);
                 };
             }
@@ -748,7 +748,7 @@ class Component extends EventTarget {
             return nodesToDocumentFragment(node.childNodes);
         };
 
-        return new Promise(async (resolve) => {
+        await new Promise(async (resolve) => {
             const define = await loadComponentDefine(this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]);
             const config = {
                 attrs: getElementAttrs(node),
@@ -851,7 +851,7 @@ class App extends EventTarget {
         if (!this._config.pages[info.path]) {
             throw new Error(`找不到路径：${info.path}`);
         }
-        return new Promise(async (resolve) => {
+        await new Promise(async (resolve) => {
             const showPage = async (page) => {
                 this._config.container.innerHTML = '';
                 const node = document.createElement('wiy-page');
