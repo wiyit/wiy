@@ -548,7 +548,7 @@ class Component extends EventTarget {
 
         const listeners = {};
         const dataBinders = {};
-        for (let attrNode of node.attributes) {
+        for (let attrNode of Array.from(node.attributes)) {//需先转成数组，防止遍历过程中删除属性导致遍历出错
             await this.renderTextOrAttr(attrNode, extraContext);
             const attrName = attrNode.nodeName;
             if (attrName.startsWith('wiy:')) {
