@@ -78,7 +78,7 @@ const insertNodeBefore = (nodeToInsert, node) => {
     node.parentNode.insertBefore(nodeToInsert, node);
 };
 const insertNodeAfter = (nodeToInsert, node) => {
-    node.nextSibling ? insertNodeBefore(nodeToInsert, node.nextSibling) : node.parentNode.appendChild(nodeToInsert);
+    node.nextSibling ? insertNodeBefore(nodeToInsert, node.nextSibling) : node.parentNode ? node.parentNode.appendChild(nodeToInsert) : void 0;
 };
 const loadComponentDefine = async (component) => {
     //component应该是一个组件的定义对象，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个组件的定义对象
@@ -238,6 +238,42 @@ const OBSERVER_STACK = new Stack();
 
 
 
+
+const replaceWith = (node, obj) => {
+    if (obj instanceof Node) {
+        node.replaceWith(obj);
+    } else {
+        node.replaceWith(nodesToDocumentFragment(toNodeList(obj)));
+    }
+};
+const insertAfter = (node, obj) => {
+    const temp = document.createComment('');
+    insertNodeAfter(temp, node);
+    replaceWith(temp, obj);
+};
+const remove = (obj) => {
+    if (obj instanceof Node) {
+        obj.remove();
+    } else {
+        nodesToDocumentFragment(toNodeList(obj));
+    }
+};
+const toNodeList = (obj) => {
+    if (obj instanceof Node) {
+        return [obj];
+    } else {
+        const list = [];
+        for (let item of obj) {
+            if (typeof item == 'undefined') {
+                continue;
+            }
+            for (let node of toNodeList(item)) {
+                list.push(node);
+            }
+        }
+        return list;
+    }
+}
 
 
 
@@ -454,7 +490,7 @@ class Component extends EventTarget {
             root.prepend(style);
         }
 
-        await this.renderChildNodes(root);
+        await this.renderNodes(root.childNodes);
         element.wiyComponent = this;
         this.dispatchEvent(new Event('mount'));
     }
@@ -478,41 +514,38 @@ class Component extends EventTarget {
         switch (node.nodeType) {
             case Node.TEXT_NODE:
             case Node.ATTRIBUTE_NODE:
-                await this.renderTextOrAttr(node, extraContext);
-                break;
+                return await this.renderTextOrAttr(node, extraContext);
             case Node.DOCUMENT_FRAGMENT_NODE:
-                await this.renderChildNodes(node, extraContext);
-                break;
+                return await this.renderNodes(node.childNodes, extraContext);
             case Node.ELEMENT_NODE:
-                await this.renderElement(node, extraContext);
-                break;
+                return await this.renderElement(node, extraContext);
         }
     }
 
     async renderTextOrAttr(node, extraContext) {
         const originNodeValue = node.nodeValue;
         let firstRender = true;
-        let prevResult;
+        let oldResult;
         await this.observe(() => {
             return this.renderString(originNodeValue, extraContext);
         }, (result) => {
-            if (!firstRender && prevResult == result) {
+            if (!firstRender && oldResult == result) {
                 return;
             }
             firstRender = false;
-            prevResult = node.nodeValue = result;
+            oldResult = node.nodeValue = result;
         });
+        return node;
     }
 
     async renderElement(node, extraContext) {
         if (node.hasAttribute('wiy:if')) {
-            await this.renderIf(node, extraContext);
-            return;
+            return await this.renderIf(node, extraContext);
         }
         if (node.hasAttribute('wiy:for')) {
-            await this.renderFor(node, extraContext);
-            return;
+            return await this.renderFor(node, extraContext);
         }
+
         const listeners = {};
         const dataBinders = {};
         for (let attrNode of node.attributes) {
@@ -619,12 +652,13 @@ class Component extends EventTarget {
         }
 
         if (this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]) {
-            await this.renderComponent(node, extraContext, listeners, dataBinders);
+            return await this.renderComponent(node, extraContext, listeners, dataBinders);
         } else {
             if (node.nodeName == 'SLOT') {
-                await this.renderSlot(node, extraContext);
+                return await this.renderSlot(node, extraContext);
             } else {
-                await this.renderChildNodes(node, extraContext);
+                await this.renderNodes(node.childNodes, extraContext);
+                return node;
             }
         }
     }
@@ -634,102 +668,126 @@ class Component extends EventTarget {
         let slotRenderer = this._config.slotRenderers[slotName];
         if (!slotRenderer) {
             slotRenderer = async () => {
-                await this.renderChildNodes(node, extraContext);
-                return nodesToDocumentFragment(node.childNodes);
+                return await this.renderNodes(node.childNodes, extraContext);
             };
         }
         const slotContents = await slotRenderer();
-        node.replaceWith(slotContents);
+        replaceWith(node, slotContents);
+        return slotContents;
     }
 
     async renderIf(node, extraContext) {
+        const list = [];
+
         const condition = removeAttr(node, 'wiy:if');
 
-        const pointer = document.createComment('');
+        const pointer = document.createComment('if');//指示if块的位置
         node.replaceWith(pointer);
-        let prevNode;
+        list.push(pointer);
+
+        let oldContent;//之前渲染好的内容
         await this.observe(() => {
             return this.renderValue(condition, extraContext);
         }, async (result) => {
             if (!result) {//不需要展示
-                prevNode && prevNode.remove();
-                return;
-            }
-
-            if (prevNode) {//已经渲染过
-                if (pointer.nextElementSibling != prevNode) {//不在dom中
-                    insertNodeAfter(prevNode, pointer);
+                if (list[1]) {//在if块中
+                    remove(oldContent);
+                    list[1] = undefined;
                 }
                 return;
             }
 
-            const copyNode = node.cloneNode(true);
-            await this.renderElement(copyNode, extraContext);
-            insertNodeAfter(copyNode, pointer);
-            prevNode = copyNode;
+            const content = oldContent || await this.renderElement(node, extraContext);
+            insertAfter(pointer, content);
+            list[1] = content;
+
+            oldContent = content;
         });
+
+        return list;
     }
 
     async renderFor(node, extraContext) {
+        const list = [];
+
         const forObj = removeAttr(node, 'wiy:for');
         const keyName = removeAttr(node, 'wiy:for.key') || 'key';
         const valueName = removeAttr(node, 'wiy:for.value') || 'value';
 
-        const pointer = document.createComment('');
+        const pointer = document.createComment('for');//指示for块的位置
         node.replaceWith(pointer);
-        let prevMap = {};
+        list.push(pointer);
+
+        const adjustContent = (oldContent, newContent, index) => {
+            const oldIndex = list.indexOf(oldContent);
+            if (oldIndex == index && oldContent == newContent) {//位置没变，内容没变
+                return;
+            }
+
+            if (oldIndex >= 0) {//在for块中
+                remove(oldContent);
+                list[oldIndex] = undefined;
+            }
+
+            const pointer = toNodeList(list[index - 1]).slice(-1)[0];
+            insertAfter(pointer, newContent);
+            list[index] = newContent;
+        };
+
+        let map = {};//之前渲染好的内容map，key是数组或对象的key，value是之前该key对应的value和已渲染好的内容
+        let oldObj;
         await this.observe(() => {
             const obj = this.renderValue(forObj, extraContext);
             Object.keys(obj);//这一行是为了观察obj中keys的变化，这样的话当keys变化时才能被通知
             return obj;
         }, async (result) => {
-            const map = {};
-            let currentPointer = pointer;
+            let i = 0;
             for (let [key, value] of Object.entries(result)) {
-                const prevData = prevMap[key];
-                const {
-                    value: prevValue,
-                    node: prevNode,
-                } = prevData || {};
-                if (prevData && value == prevValue) {
-                    map[key] = prevData;
-                    currentPointer = prevNode;
+                const index = ++i;
+
+                let oldData = map[key];
+                if (oldData && (result == oldObj || value == oldData.value)) {//有之前渲染好的内容
+                    const oldContent = oldData.content;
+                    adjustContent(oldContent, oldContent, index);//只需要调节内容位置
                     continue;
                 }
 
-                let temp = prevNode || document.createComment('');
-                !prevNode && insertNodeAfter(temp, currentPointer);
                 await this.observe(() => {
                     return result[key];//这一行是为了观察obj中该key对应的value的变化，这样的话当该key对应的value变化时才能被通知
                 }, async (value) => {
                     const copyNode = node.cloneNode(true);
-                    await this.renderElement(copyNode, {
+                    const content = await this.renderElement(copyNode, {
                         ...extraContext,
                         [keyName]: key,
                         [valueName]: value,
                     });
-                    temp.replaceWith(copyNode);
-                    temp = copyNode;
-                    map[key] = {
-                        value,
-                        node: copyNode,
-                    };
+
+                    const oldContent = oldData ? oldData.content : undefined;
+                    adjustContent(oldContent, content, index);//更新内容
+
+                    const data = oldData || {};
+                    data.value = value;
+                    data.content = content;
+                    oldData = map[key] = data;
                 });
-                currentPointer = temp;
             }
-            prevMap = map;
+            oldObj = result;
         });
+
+        return list;
     }
 
-    async renderChildNodes(node, extraContext) {
-        for (let childNode of node.childNodes) {
-            await this.renderNode(childNode, extraContext);
+    async renderNodes(nodes, extraContext) {
+        const list = [];
+        for (let node of nodes) {
+            list.push(await this.renderNode(node, extraContext));
         }
+        return list;
     }
 
     async renderComponent(node, extraContext, listeners, dataBinders) {
         if (node.wiyComponent) {
-            return;
+            return node;
         }
 
         const slotRenderers = {};
@@ -738,14 +796,12 @@ class Component extends EventTarget {
                 childNode.remove();
                 const slotName = childNode.getAttribute('wiy:slot') || '';
                 slotRenderers[slotName] = async () => {
-                    await this.renderChildNodes(childNode.content, extraContext);
-                    return nodesToDocumentFragment(childNode.content.childNodes);
+                    return await this.renderNodes(childNode.content.childNodes, extraContext);
                 };
             }
         }
         slotRenderers[''] = async () => {
-            await this.renderChildNodes(node, extraContext);
-            return nodesToDocumentFragment(node.childNodes);
+            return await this.renderNodes(node.childNodes, extraContext);
         };
 
         await new Promise(async (resolve) => {
@@ -766,6 +822,8 @@ class Component extends EventTarget {
                 resolve(component);
             });
         });
+
+        return node;
     }
 
     renderString(template, extraContext) {
