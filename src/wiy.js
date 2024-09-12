@@ -491,7 +491,6 @@ class Component extends EventTarget {
         }
 
         await this.renderNodes(root.childNodes);
-        element.wiyComponent = this;
         this.dispatchEvent(new Event('mount'));
     }
 
@@ -779,19 +778,15 @@ class Component extends EventTarget {
 
     async renderNodes(nodes, extraContext) {
         const list = [];
-        for (let node of nodes) {
+        for (let node of Array.from(nodes)) {
             list.push(await this.renderNode(node, extraContext));
         }
         return list;
     }
 
     async renderComponent(node, extraContext, listeners, dataBinders) {
-        if (node.wiyComponent) {
-            return node;
-        }
-
         const slotRenderers = {};
-        for (let childNode of node.childNodes) {
+        for (let childNode of Array.from(node.childNodes)) {
             if (childNode.nodeName == 'TEMPLATE') {
                 childNode.remove();
                 const slotName = childNode.getAttribute('wiy:slot') || '';
