@@ -479,6 +479,7 @@ class Component extends EventTarget {
             root = element.attachShadow({ mode: 'closed' });
         }
         root.innerHTML = await loadSourceString(this._config.template) || '';
+        await this.renderNodes(root.childNodes);
 
         let cssCode = await loadSourceString(this._config.style) || '';
         if (cssCode) {
@@ -487,11 +488,13 @@ class Component extends EventTarget {
             const style = document.createElement('link');
             style.rel = 'stylesheet';
             style.href = URL.createObjectURL(new Blob([cssCode], { type: 'text/css' }));
+            style.onload = async () => {
+                this.dispatchEvent(new Event('mount'));
+            };
             root.prepend(style);
+        } else {
+            this.dispatchEvent(new Event('mount'));
         }
-
-        await this.renderNodes(root.childNodes);
-        this.dispatchEvent(new Event('mount'));
     }
 
     async observe(func, callback) {
@@ -813,6 +816,11 @@ class Component extends EventTarget {
                 ...config,
             });
             component.addEventListener('init', async () => {
+                node.style.visibility = 'hidden';
+                component.addEventListener('mount', () => {
+                    node.style.visibility = '';
+                });
+
                 await component.mount(node);
                 resolve(component);
             });
