@@ -138,8 +138,8 @@ class ObserverManager {
         if (!observer) {
             return;
         }
-        const temp = this._map[target._proxyUuid] ||= {};
-        const observers = temp[prop] ||= new Set();//需要注意内存泄漏
+        const temp = this._map[target._proxyUuid] = this._map[target._proxyUuid] || {};
+        const observers = temp[prop] = temp[prop] || new Set();//需要注意内存泄漏
         observers.add(observer);
     }
 
@@ -342,7 +342,7 @@ class Component extends EventTarget {
             },
             this: this._proxyThis,
         };
-        this._config.components ||= {};
+        this._config.components = this._config.components || {};
 
         Object.entries(this._config.components).forEach(([name, value]) => {
             this._config.components[name.toUpperCase()] = value;
@@ -586,18 +586,18 @@ class Component extends EventTarget {
                             switch (node.getAttribute('type')) {
                                 case 'checkbox':
                                 case 'radio':
-                                    bindAttrName ||= 'checked';
+                                    bindAttrName = bindAttrName || 'checked';
                                     eventType = 'change';
                                     break;
                                 default:
-                                    bindAttrName ||= 'value';
+                                    bindAttrName = bindAttrName || 'value';
                                     eventType = 'change';
                                     break;
                             }
                             break;
                         case 'TEXTAREA':
                         case 'SELECT':
-                            bindAttrName ||= 'value';
+                            bindAttrName = bindAttrName || 'value';
                             eventType = 'change';
                             break;
                         default:
@@ -874,7 +874,7 @@ class App extends EventTarget {
     }
 
     async init() {
-        this._config.components ||= {};
+        this._config.components = this._config.components || {};
 
         Object.entries(this._config.components).forEach(([name, value]) => {
             this._config.components[name.toUpperCase()] = value;
@@ -896,7 +896,7 @@ class App extends EventTarget {
         Object.entries(this._config.lifecycle || {}).forEach(([name, value]) => {
             this.addEventListener(name, this._config.lifecycle[name] = value.bind(this));
         });
-        this._config.container ||= document.body;
+        this._config.container = this._config.container || document.body;
 
         this._router.addEventListener('change', e => {
             if (e.data.path) {
@@ -979,7 +979,8 @@ class Router extends EventTarget {
         this._current = {};
         if (path.startsWith(base)) {
             this._current.path = path.slice(base.length);
-            this._current.params = url.searchParams.entries().reduce((params, [name, value]) => {
+            const urlParams = Array.from(url.searchParams.entries());//兼容性问题：firefox中URL.searchParams.entries()无reduce方法
+            this._current.params = urlParams.reduce((params, [name, value]) => {
                 params[name] = value;
                 return params;
             }, {});
