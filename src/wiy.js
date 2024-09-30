@@ -174,7 +174,7 @@ const isProxyObj = (obj) => {
     return typeof obj == 'object' && !!obj._proxyUuid;
 };
 const tryCreateProxy = (obj) => {
-    if (typeof obj != 'object' || isProxyObj(obj) || obj instanceof Date) {
+    if (typeof obj != 'object' || isProxyObj(obj) || obj instanceof Date || obj instanceof Node) {
         return obj;
     }
     const proxyObj = new Proxy(obj, {
@@ -337,9 +337,6 @@ class Component extends EventTarget {
 
     async init() {
         this._config.context = {
-            wiy: {
-                router: this._config.app._router,
-            },
             this: this._proxyThis,
         };
         this._config.components = this._config.components || {};
@@ -390,6 +387,10 @@ class Component extends EventTarget {
 
     trigger(eventType, data) {
         this._rawThis.dispatchEvent(new WiyEvent(eventType, data));
+    }
+
+    getElement(id) {
+        return this._dom.getElementById(id);
     }
 
     addChild(component) {
@@ -478,6 +479,8 @@ class Component extends EventTarget {
         if (this._config.template) {
             root = element.attachShadow({ mode: 'closed' });
         }
+        this._dom = root;
+
         root.innerHTML = await loadSourceString(this._config.template) || '';
         await this.renderNodes(root.childNodes);
 
@@ -560,7 +563,7 @@ class Component extends EventTarget {
                     const eventHandler = (e) => {
                         const handler = this.renderValue(attrValue, extraContext);
                         if (typeof handler == 'function') {
-                            handler(e, node);
+                            handler(e);
                         }
                     };
                     node.addEventListener(eventType, eventHandler);
@@ -579,7 +582,13 @@ class Component extends EventTarget {
                         }
                     });
                 } else if (attrName.startsWith('wiy:data')) {
-                    let bindAttrName = attrName.startsWith('wiy:data-') ? attrName.slice(9) : undefined;
+                    let bindAttrName;
+                    if (attrName.startsWith('wiy:data-')) {
+                        bindAttrName = attrName.slice(9);
+                    } else if (attrName != 'wiy:data') {
+                        continue;
+                    }
+
                     let eventType;
                     switch (node.nodeName) {
                         case 'INPUT':
@@ -726,14 +735,16 @@ class Component extends EventTarget {
                 return;
             }
 
-            if (oldIndex >= 0) {//在for块中
+            if (oldContent && oldIndex >= 0) {//在for块中
                 remove(oldContent);
                 list[oldIndex] = undefined;
             }
 
-            const pointer = toNodeList(list[index - 1]).slice(-1)[0];
-            insertAfter(pointer, newContent);
-            list[index] = newContent;
+            if (newContent) {
+                const pointer = toNodeList(list[index - 1]).slice(-1)[0];
+                insertAfter(pointer, newContent);
+                list[index] = newContent;
+            }
         };
 
         let map = {};//之前渲染好的内容map，key是数组或对象的key，value是之前该key对应的value和已渲染好的内容
@@ -743,9 +754,9 @@ class Component extends EventTarget {
             Object.keys(obj);//这一行是为了观察obj中keys的变化，这样的话当keys变化时才能被通知
             return obj;
         }, async (result) => {
-            let i = 0;
+            let index = 0;
             for (let [key, value] of Object.entries(result)) {
-                const index = ++i;
+                index++;
 
                 let oldData = map[key];
                 if (oldData && (result == oldObj || value == oldData.value)) {//有之前渲染好的内容
@@ -773,6 +784,11 @@ class Component extends EventTarget {
                     oldData = map[key] = data;
                 });
             }
+            while (index < list.length - 1) {//后续index上原有的内容需要清除
+                index++;
+                adjustContent(list[index]);//清除内容
+            }
+
             oldObj = result;
         });
 
@@ -866,9 +882,16 @@ class App extends EventTarget {
             _router: {
                 value: new Router(),
             },
+            _eventBus: {
+                value: new EventBus(),
+            },
         });
 
         this.init().then(() => {
+            window.wiy = {
+                router: this._router,
+                eventBus: this._eventBus,
+            };
             this.dispatchEvent(new Event('init'));
         });
     }
@@ -909,9 +932,6 @@ class App extends EventTarget {
     }
 
     async renderPage(info) {
-        if (!this._config.pages[info.path]) {
-            throw new Error(`找不到路径：${info.path}`);
-        }
         await new Promise(async (resolve) => {
             const showPage = async (page) => {
                 this._config.container.innerHTML = '';
@@ -926,7 +946,7 @@ class App extends EventTarget {
             if (page) {
                 showPage(page);
             } else {
-                const define = await loadComponentDefine(this._config.pages[info.path]);
+                const define = await loadComponentDefine(this._config.pages[info.path] || this._config.pages[this._config.index]);
                 page = new Page({
                     ...define,
                     app: this,
@@ -989,6 +1009,10 @@ class Router extends EventTarget {
         change && this.dispatchEvent(new WiyEvent('change', this._current));
     }
 
+    getCurrent() {
+        return this._current;
+    }
+
     go(path, params = {}) {
         const url = new URL(this._base + path, location);
         Object.entries(params).forEach(([name, value]) => {
@@ -1004,6 +1028,16 @@ class Router extends EventTarget {
 
     forward() {
         history.forward();
+    }
+}
+
+class EventBus extends EventTarget {
+    on(eventType, listener, target = this) {
+        target.addEventListener(eventType, listener);
+    }
+
+    trigger(eventType, data, target = this) {
+        target.dispatchEvent(new WiyEvent(eventType, data));
     }
 }
 
