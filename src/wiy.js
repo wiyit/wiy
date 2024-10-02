@@ -357,7 +357,11 @@ class Component extends EventTarget {
                 this.addEventListener(name, listener);
             });
         });
-        Object.entries(this._config.data || {}).forEach(([name, value]) => {
+        let data = this._config.data;
+        if (typeof data == 'function') {
+            data = data.bind(this._proxyThis)();
+        }
+        Object.entries(data || {}).forEach(([name, value]) => {
             this[name] = value;
         });
         for (let [name, value] of Object.entries(this._config.dataBinders || {})) {
@@ -367,6 +371,10 @@ class Component extends EventTarget {
 
     getUuid() {
         return this._uuid;
+    }
+
+    getApp() {
+        return this._config.app;
     }
 
     setData(data) {
@@ -491,7 +499,7 @@ class Component extends EventTarget {
             const style = document.createElement('link');
             style.rel = 'stylesheet';
             style.href = URL.createObjectURL(new Blob([cssCode], { type: 'text/css' }));
-            style.onload = async () => {
+            style.onload = () => {
                 this.dispatchEvent(new Event('mount'));
             };
             root.prepend(style);
@@ -754,9 +762,13 @@ class Component extends EventTarget {
             Object.keys(obj);//这一行是为了观察obj中keys的变化，这样的话当keys变化时才能被通知
             return obj;
         }, async (result) => {
+            const isArray = Array.isArray(result);
             let index = 0;
             for (let [key, value] of Object.entries(result)) {
                 index++;
+                if (isArray) {
+                    key = parseInt(key);
+                }
 
                 let oldData = map[key];
                 if (oldData && (result == oldObj || value == oldData.value)) {//有之前渲染好的内容
@@ -885,13 +897,12 @@ class App extends EventTarget {
             _eventBus: {
                 value: new EventBus(),
             },
+            _storage: {
+                value: new Storage(),
+            },
         });
 
         this.init().then(() => {
-            window.wiy = {
-                router: this._router,
-                eventBus: this._eventBus,
-            };
             this.dispatchEvent(new Event('init'));
         });
     }
@@ -931,6 +942,18 @@ class App extends EventTarget {
         this._router.updateStatus();
     }
 
+    getRouter() {
+        return this._router;
+    }
+
+    getEventBus() {
+        return this._eventBus;
+    }
+
+    getStorage() {
+        return this._storage;
+    }
+
     async renderPage(info) {
         await new Promise(async (resolve) => {
             const showPage = async (page) => {
@@ -941,17 +964,16 @@ class App extends EventTarget {
                 resolve(page);
             };
 
-            const key = JSON.stringify(info);
-            let page = this._pageCache[key];
+            const define = await loadComponentDefine(this._config.pages[info.path] || this._config.pages[this._config.index]);
+            let page = this._pageCache[define];
             if (page) {
-                showPage(page);
+                // showPage(page);
             } else {
-                const define = await loadComponentDefine(this._config.pages[info.path] || this._config.pages[this._config.index]);
                 page = new Page({
                     ...define,
                     app: this,
                 });
-                this._pageCache[key] = page;
+                this._pageCache[define] = page;
                 page.addEventListener('init', () => {
                     showPage(page);
                 });
@@ -973,10 +995,9 @@ class Router extends EventTarget {
             },
             _base: {
                 value: wiyEnv.publicPath,
-                writable: true,
             },
             _current: {
-                writable: true,
+                value: tryCreateProxy({}),
             },
         });
 
@@ -996,7 +1017,6 @@ class Router extends EventTarget {
         const url = new URL(location);
         const path = url.pathname;
 
-        this._current = {};
         if (path.startsWith(base)) {
             this._current.path = path.slice(base.length);
             const urlParams = Array.from(url.searchParams.entries());//兼容性问题：firefox中URL.searchParams.entries()无reduce方法
@@ -1038,6 +1058,31 @@ class EventBus extends EventTarget {
 
     trigger(eventType, data, target = this) {
         target.dispatchEvent(new WiyEvent(eventType, data));
+    }
+}
+
+class Storage extends EventTarget {
+    constructor(config = {}) {
+        super();
+        Object.defineProperties(this, {
+            _config: {
+                value: config,
+            },
+            _current: {
+                value: tryCreateProxy({}),
+            },
+        });
+
+        this.init().then(() => {
+            this.dispatchEvent(new Event('init'));
+        });
+    }
+
+    async init() {
+    }
+
+    getCurrent() {
+        return this._current;
     }
 }
 
