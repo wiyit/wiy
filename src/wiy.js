@@ -1,4 +1,4 @@
-import { v4 as uuid } from 'uuid';
+import _ from 'lodash';
 
 const getElementAttrs = (element) => {
     const attrs = {};
@@ -82,7 +82,10 @@ const insertNodeAfter = (nodeToInsert, node) => {
 };
 const loadComponentDefine = async (component) => {
     //component应该是一个组件的定义对象，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个组件的定义对象
-    return component instanceof Promise ? (await component).default : component;
+    if (!(component instanceof Promise)) {
+        return component;
+    }
+    return _.cloneDeep((await component).default);//将组件定义进行深拷贝，使组件间数据隔离
 };
 const loadSourceString = async (source) => {
     //source应该是一个字符串，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个字符串
@@ -284,7 +287,7 @@ const tryCreateProxy = (obj) => {
     });
     Object.defineProperties(proxyObj, {
         _proxyUuid: {
-            value: uuid(),
+            value: _.uniqueId('proxy-'),
         },
     });
     return proxyObj;
@@ -364,7 +367,7 @@ class Component extends EventTarget {
                 value: tryCreateProxy(this),
             },
             _uuid: {
-                value: uuid(),
+                value: _.uniqueId('component-'),
             },
             _config: {
                 value: config,
@@ -956,7 +959,7 @@ class App extends EventTarget {
         super();
         Object.defineProperties(this, {
             _uuid: {
-                value: uuid(),
+                value: _.uniqueId('app-'),
             },
             _config: {
                 value: config,

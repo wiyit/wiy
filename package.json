@@ -13,7 +13,7 @@
   "author": "wiyit",
   "license": "MIT",
   "dependencies": {
-    "uuid": "^10.0.0"
+    "lodash": "^4.17.21"
   },
   "repository": {
     "url": "git+https://github.com/wiyit/wiy.git"
