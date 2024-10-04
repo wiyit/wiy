@@ -96,6 +96,35 @@ const loadPluginMethod = async (plugin) => {
 
 
 
+class Queue {
+    constructor() {
+        Object.defineProperties(this, {
+            _items: {
+                value: [],
+            },
+        });
+    }
+
+    enqueue(element) {
+        this._items.push(element);
+    }
+
+    dequeue() {
+        return this._items.shift();
+    }
+
+    peek() {
+        return this._items[0];
+    }
+
+    size() {
+        return this._items.length;
+    }
+
+    isEmpty() {
+        return this.size() == 0;
+    }
+}
 class Stack {
     constructor() {
         Object.defineProperties(this, {
@@ -114,7 +143,15 @@ class Stack {
     }
 
     peek() {
-        return this._items[this._items.length - 1];
+        return this._items[this.size() - 1];
+    }
+
+    size() {
+        return this._items.length;
+    }
+
+    isEmpty() {
+        return this.size() == 0;
     }
 }
 class ObserverManager {
@@ -123,10 +160,21 @@ class ObserverManager {
             _map: {
                 value: {},
             },
+            _queue: {
+                value: new Queue(),
+            },
             _symbolForTargetSelf: {
                 value: Symbol(),
             },
         });
+
+        const update = async () => {
+            while (!this._queue.isEmpty()) {
+                await this._queue.dequeue()();
+            }
+            window.requestAnimationFrame(update);
+        };
+        window.requestAnimationFrame(update);
     }
 
     /**
@@ -145,16 +193,24 @@ class ObserverManager {
 
     notify(target, prop, propsChanged) {
         const temp = this._map[target._proxyUuid] || {};
+        const observers = new Set();
         //该属性的观察者
         temp[prop] && temp[prop].forEach(observer => {
-            observer.process(target, prop);
+            observers.add(observer);
         });
         if (propsChanged) {
             //该属性所属对象本身的观察者
             temp[this._symbolForTargetSelf] && temp[this._symbolForTargetSelf].forEach(observer => {
-                observer.process(target, prop);
+                observers.add(observer);
             });
         }
+
+        //添加到处理队列中
+        observers.forEach(observer => {
+            this._queue.enqueue(async () => {
+                await observer.process(target, prop);
+            });
+        });
     }
 }
 class Observer {
@@ -166,8 +222,8 @@ class Observer {
         });
     }
 
-    process(target, prop) {
-        this._callback(target, prop);
+    async process(target, prop) {
+        await this._callback(target, prop);
     }
 }
 const isProxyObj = (obj) => {
@@ -340,6 +396,7 @@ class Component extends EventTarget {
             this: this._proxyThis,
         };
         this._config.components = this._config.components || {};
+        this._config.lifecycle = this._config.lifecycle || {};
 
         Object.entries(this._config.components).forEach(([name, value]) => {
             this._config.components[name.toUpperCase()] = value;
@@ -348,9 +405,6 @@ class Component extends EventTarget {
             Object.defineProperty(this, name, {
                 value: value.bind(this._proxyThis),
             });
-        });
-        Object.entries(this._config.lifecycle || {}).forEach(([name, value]) => {
-            this.addEventListener(name, value.bind(this._proxyThis));
         });
         Object.entries(this._config.listeners || {}).forEach(([name, value]) => {
             value.forEach(listener => {
@@ -367,6 +421,9 @@ class Component extends EventTarget {
         for (let [name, value] of Object.entries(this._config.dataBinders || {})) {
             await value(this);
         }
+
+        const lifecycleFunction = this._config.lifecycle.init;
+        lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
     }
 
     getUuid() {
@@ -398,7 +455,7 @@ class Component extends EventTarget {
     }
 
     getElement(id) {
-        return this._dom.getElementById(id);
+        return this._dom ? this._dom.getElementById(id) : undefined;
     }
 
     addChild(component) {
@@ -492,6 +549,12 @@ class Component extends EventTarget {
         root.innerHTML = await loadSourceString(this._config.template) || '';
         await this.renderNodes(root.childNodes);
 
+        const afterMount = async () => {
+            const lifecycleFunction = this._config.lifecycle.mount;
+            lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
+            this.dispatchEvent(new Event('mount'));
+        };
+
         let cssCode = await loadSourceString(this._config.style) || '';
         if (cssCode) {
             cssCode = cssCode.replaceAll(':root', ':root,:host');
@@ -499,12 +562,12 @@ class Component extends EventTarget {
             const style = document.createElement('link');
             style.rel = 'stylesheet';
             style.href = URL.createObjectURL(new Blob([cssCode], { type: 'text/css' }));
-            style.onload = () => {
-                this.dispatchEvent(new Event('mount'));
+            style.onload = async () => {
+                await afterMount();
             };
             root.prepend(style);
         } else {
-            this.dispatchEvent(new Event('mount'));
+            await afterMount();
         }
     }
 
@@ -512,13 +575,13 @@ class Component extends EventTarget {
         const startObserve = async () => {
             OBSERVER_STACK.push(observer);
             try {
-                return await callback(func());
+                return await callback(await func());
             } finally {
                 OBSERVER_STACK.pop();
             }
         };
-        const observer = new Observer(() => {
-            startObserve();
+        const observer = new Observer(async () => {
+            await startObserve();
         });
         return await startObserve();
     }
@@ -763,9 +826,10 @@ class Component extends EventTarget {
             return obj;
         }, async (result) => {
             const isArray = Array.isArray(result);
-            let index = 0;
+            let i = 0;
             for (let [key, value] of Object.entries(result)) {
-                index++;
+                i++;
+                let index = i;
                 if (isArray) {
                     key = parseInt(key);
                 }
@@ -780,6 +844,15 @@ class Component extends EventTarget {
                 await this.observe(() => {
                     return result[key];//这一行是为了观察obj中该key对应的value的变化，这样的话当该key对应的value变化时才能被通知
                 }, async (value) => {
+                    if (!(key in result)) {//key被移除
+                        return;
+                    }
+
+                    const oldValue = oldData ? oldData.value : undefined;
+                    if (oldValue == value) {//key对应的value没有发生变化
+                        return;
+                    }
+
                     const copyNode = node.cloneNode(true);
                     const content = await this.renderElement(copyNode, {
                         ...extraContext,
@@ -796,9 +869,9 @@ class Component extends EventTarget {
                     oldData = map[key] = data;
                 });
             }
-            while (index < list.length - 1) {//后续index上原有的内容需要清除
-                index++;
-                adjustContent(list[index]);//清除内容
+            while (i < list.length - 1) {//后续index上原有的内容需要清除
+                i++;
+                adjustContent(list[i]);//清除内容
             }
 
             oldObj = result;
@@ -903,12 +976,15 @@ class App extends EventTarget {
         });
 
         this.init().then(() => {
+            this._router.updateStatus();
             this.dispatchEvent(new Event('init'));
         });
     }
 
     async init() {
         this._config.components = this._config.components || {};
+        this._config.lifecycle = this._config.lifecycle || {};
+        this._config.container = this._config.container || document.body;
 
         Object.entries(this._config.components).forEach(([name, value]) => {
             this._config.components[name.toUpperCase()] = value;
@@ -927,11 +1003,6 @@ class App extends EventTarget {
             await method(this);
         }
 
-        Object.entries(this._config.lifecycle || {}).forEach(([name, value]) => {
-            this.addEventListener(name, this._config.lifecycle[name] = value.bind(this));
-        });
-        this._config.container = this._config.container || document.body;
-
         this._router.addEventListener('change', e => {
             if (e.data.path) {
                 this.renderPage(e.data);
@@ -939,7 +1010,9 @@ class App extends EventTarget {
                 this._router.go(this._config.index);
             }
         });
-        this._router.updateStatus();
+
+        const lifecycleFunction = this._config.lifecycle.init;
+        lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this)());
     }
 
     getRouter() {
