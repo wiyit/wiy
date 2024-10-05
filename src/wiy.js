@@ -231,21 +231,43 @@ class ObserverManager {
             });
         });
     }
+
+    stop(component) {
+        Object.values(this._map).forEach(temp => {
+            Object.values(temp).forEach(observers => {
+                observers.forEach(observer => {
+                    if (observer.getComponent() == component) {
+                        observers.delete(observer);
+                    }
+                });
+            });
+        });
+    }
 }
 class Observer {
-    constructor(callback, info) {
+    constructor(callback, info, component) {
         Object.defineProperties(this, {
+            _uuid: {
+                value: _.uniqueId('observer-'),
+            },
             _callback: {
                 value: callback,
             },
             _info: {
                 value: info,
             },
+            _component: {
+                value: component,
+            },
         });
     }
 
     async process() {
         await this._callback();
+    }
+
+    getComponent() {
+        return this._component;
     }
 }
 const isProxyObj = (obj) => {
@@ -315,8 +337,33 @@ const OBSERVER_MANAGER = new ObserverManager();
 
 
 
+const unmount = (obj) => {
+    if (obj instanceof Node) {
+        switch (obj.nodeType) {
+            case Node.DOCUMENT_FRAGMENT_NODE:
+                obj.childNodes.forEach(childNode => {
+                    unmount(childNode);
+                });
+                break;
+            case Node.ELEMENT_NODE:
+                obj.childNodes.forEach(childNode => {
+                    unmount(childNode);
+                });
+                if (obj._wiyComponent) {
+                    obj._wiyComponent.unmount();
+                }
+                break;
+        }
+        return;
+    }
 
+    const nodeList = toNodeList(obj);
+    nodeList.forEach(node => {
+        unmount(node);
+    });
+};
 const replaceWith = (node, obj) => {
+    unmount(node);
     if (obj instanceof Node) {
         node.replaceWith(obj);
     } else {
@@ -329,6 +376,7 @@ const insertAfter = (node, obj) => {
     replaceWith(temp, obj);
 };
 const remove = (obj) => {
+    unmount(obj);
     if (obj instanceof Node) {
         obj.remove();
     } else {
@@ -396,14 +444,8 @@ class Component extends EventTarget {
             _children: {
                 value: new Set(),//需要注意内存泄漏
             },
-            _pointer: {
-                writable: true,
-            },
             _dom: {
                 writable: true,
-            },
-            _managedNodes: {
-                value: new Set(),//需要注意内存泄漏
             },
         });
 
@@ -486,7 +528,6 @@ class Component extends EventTarget {
         }
         this._children.add(component);
         component._parent = this;
-        this._managedNodes.add(component._managedNodes);
     }
 
     removeChild(component) {
@@ -495,61 +536,6 @@ class Component extends EventTarget {
         }
         this._children.delete(component);
         component._parent = null;
-        this._managedNodes.delete(component._managedNodes);
-    }
-
-    async refresh() {
-        if (!this.isConnected()) {//这里需要销毁旧的对象及相关资源
-            return;
-        }
-
-        const oldPointer = this._pointer;
-
-        this._managedNodes.delete(oldPointer);
-        removeNodesSet(this._managedNodes);
-        this._managedNodes.clear();
-
-        this._children.forEach(child => {
-            this.removeChild(child);
-        });
-
-        await this.generateDom();
-        await this.replaceTo(oldPointer);
-    }
-
-    async replaceTo(node) {
-        if (!this._dom) {
-            await this.generateDom();
-        }
-        node.replaceWith(nodesToDocumentFragment(this._dom));
-    }
-
-    async appendTo(element) {
-        const temp = document.createComment('');
-        element.appendChild(temp);
-        await this.replaceTo(temp);
-    }
-
-    async generateDom() {
-        const nodes = await this.renderNodes();
-        this._pointer = document.createComment(`${this._uuid}`);
-        this._dom = [this._pointer, ...nodes];
-        this._dom.forEach(node => {
-            this._managedNodes.add(node);
-        });
-    }
-
-    isConnected() {
-        return this._pointer && this._pointer.isConnected;
-    }
-
-    getParents() {
-        const parents = [];
-        let temp = this;
-        while (temp = temp._parent) {
-            parents.push(temp);
-        }
-        return parents;
     }
 
     async mount(element) {
@@ -571,6 +557,8 @@ class Component extends EventTarget {
         await this.renderNodes(root.childNodes);
 
         const afterMount = async () => {
+            element._wiyComponent = this;
+
             const lifecycleFunction = this._config.lifecycle.mount;
             lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
             this.dispatchEvent(new Event('mount'));
@@ -590,6 +578,24 @@ class Component extends EventTarget {
         } else {
             await afterMount();
         }
+    }
+
+    async unmount() {
+        OBSERVER_MANAGER.stop(this);
+
+        this._children.forEach(child => {
+            child.unmount();
+        });
+
+        this._dom = undefined;
+
+        const afterUnmount = async () => {
+            const lifecycleFunction = this._config.lifecycle.unmount;
+            lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
+            this.dispatchEvent(new Event('unmount'));
+        };
+
+        await afterUnmount();
     }
 
     async observe(func, callback, info) {
@@ -618,8 +624,10 @@ class Component extends EventTarget {
             }
         };
         const observer = new Observer(async () => {
-            await startObserve();
-        }, info);
+            if (this._dom) {
+                await startObserve();
+            }
+        }, info, this);
         return await startObserve();
     }
 
@@ -957,6 +965,7 @@ class Component extends EventTarget {
                 ...define,
                 ...config,
             });
+            this.addChild(component);
             component.addEventListener('init', async () => {
                 node.style.visibility = 'hidden';
                 component.addEventListener('mount', () => {
