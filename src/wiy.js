@@ -156,6 +156,10 @@ class Stack {
     isEmpty() {
         return this.size() == 0;
     }
+
+    forEach(callback) {
+        this._items.forEach(callback);
+    }
 }
 class ObserverManager {
     constructor() {
@@ -165,6 +169,9 @@ class ObserverManager {
             },
             _queue: {
                 value: new Queue(),
+            },
+            _stack: {
+                value: new Stack(),
             },
             _symbolForTargetSelf: {
                 value: Symbol(),
@@ -180,18 +187,27 @@ class ObserverManager {
         window.requestAnimationFrame(update);
     }
 
+    push(observer) {
+        this._stack.push(observer);
+    }
+
+    pop() {
+        this._stack.pop();
+    }
+
     /**
-     * @param {*} observer 
      * @param {*} target 
      * @param {*} prop  当观察者观察的是target本身，而不是target下的具体某个属性时，不需要传prop
      */
-    add(observer, target, prop = this._symbolForTargetSelf) {
-        if (!observer) {
+    observe(target, prop = this._symbolForTargetSelf) {
+        if (this._stack.isEmpty()) {
             return;
         }
         const temp = this._map[target._proxyUuid] = this._map[target._proxyUuid] || {};
         const observers = temp[prop] = temp[prop] || new Set();//需要注意内存泄漏
-        observers.add(observer);
+        this._stack.forEach(observer => {
+            observers.add(observer);
+        });
     }
 
     notify(target, prop, propsChanged) {
@@ -211,22 +227,25 @@ class ObserverManager {
         //添加到处理队列中
         observers.forEach(observer => {
             this._queue.enqueue(async () => {
-                await observer.process(target, prop);
+                await observer.process();
             });
         });
     }
 }
 class Observer {
-    constructor(callback) {
+    constructor(callback, info) {
         Object.defineProperties(this, {
             _callback: {
                 value: callback,
             },
+            _info: {
+                value: info,
+            },
         });
     }
 
-    async process(target, prop) {
-        await this._callback(target, prop);
+    async process() {
+        await this._callback();
     }
 }
 const isProxyObj = (obj) => {
@@ -236,12 +255,17 @@ const tryCreateProxy = (obj) => {
     if (typeof obj != 'object' || isProxyObj(obj) || obj instanceof Date || obj instanceof Node) {
         return obj;
     }
+    Object.defineProperties(obj, {
+        _proxyUuid: {
+            value: _.uniqueId('proxy-'),
+        },
+    });
     const proxyObj = new Proxy(obj, {
         has(target, prop) {
             const has = Reflect.has(target, prop);
             const propDesc = Reflect.getOwnPropertyDescriptor(target, prop);
             if (!has || (propDesc && propDesc.writable)) {
-                OBSERVER_MANAGER.add(OBSERVER_STACK.peek(), target, prop);
+                OBSERVER_MANAGER.observe(target, prop);
             }
             return has;
         },
@@ -254,13 +278,13 @@ const tryCreateProxy = (obj) => {
                 if (isProxyObj(value)) {
                     Reflect.set(target, prop, value);
                 }
-                OBSERVER_MANAGER.add(OBSERVER_STACK.peek(), target, prop);
+                OBSERVER_MANAGER.observe(target, prop);
             }
             return value;
         },
         ownKeys(target) {
             const result = Reflect.ownKeys(target);
-            OBSERVER_MANAGER.add(OBSERVER_STACK.peek(), target);
+            OBSERVER_MANAGER.observe(target);
             return result;
         },
         set(target, prop, value) {//如果加了receiver，就会和defineProperty重复触发
@@ -285,15 +309,9 @@ const tryCreateProxy = (obj) => {
             return result;
         },
     });
-    Object.defineProperties(proxyObj, {
-        _proxyUuid: {
-            value: _.uniqueId('proxy-'),
-        },
-    });
     return proxyObj;
 };
 const OBSERVER_MANAGER = new ObserverManager();
-const OBSERVER_STACK = new Stack();
 
 
 
@@ -574,18 +592,34 @@ class Component extends EventTarget {
         }
     }
 
-    async observe(func, callback) {
+    async observe(func, callback, info) {
+        let firstRender = true;
+        let oldResult;
         const startObserve = async () => {
-            OBSERVER_STACK.push(observer);
+            let result;
+            let needCallback = false;
+            OBSERVER_MANAGER.push(observer);
             try {
-                return await callback(await func());
+                result = func();
+                if (result instanceof Promise) {
+                    result = await result;
+                }
+                if (!firstRender && !_.isObject(result) && oldResult == result) {
+                    return;
+                }
+                firstRender = false;
+                oldResult = result;
+                needCallback = true;
             } finally {
-                OBSERVER_STACK.pop();
+                OBSERVER_MANAGER.pop();
+                if (needCallback) {
+                    return await callback(result);
+                }
             }
         };
         const observer = new Observer(async () => {
             await startObserve();
-        });
+        }, info);
         return await startObserve();
     }
 
@@ -603,17 +637,11 @@ class Component extends EventTarget {
 
     async renderTextOrAttr(node, extraContext) {
         const originNodeValue = node.nodeValue;
-        let firstRender = true;
-        let oldResult;
         await this.observe(() => {
             return this.renderString(originNodeValue, extraContext);
         }, (result) => {
-            if (!firstRender && oldResult == result) {
-                return;
-            }
-            firstRender = false;
-            oldResult = node.nodeValue = result;
-        });
+            node.nodeValue = result;
+        }, originNodeValue);
         return node;
     }
 
@@ -654,7 +682,7 @@ class Component extends EventTarget {
                         } else {
                             node.innerHTML = result;
                         }
-                    });
+                    }, attrValue);
                 } else if (attrName.startsWith('wiy:data')) {
                     let bindAttrName;
                     if (attrName.startsWith('wiy:data-')) {
@@ -664,51 +692,58 @@ class Component extends EventTarget {
                     }
 
                     let eventType;
-                    switch (node.nodeName) {
-                        case 'INPUT':
-                            switch (node.getAttribute('type')) {
-                                case 'checkbox':
-                                case 'radio':
-                                    bindAttrName = bindAttrName || 'checked';
-                                    eventType = 'change';
-                                    break;
-                                default:
-                                    bindAttrName = bindAttrName || 'value';
-                                    eventType = 'change';
-                                    break;
-                            }
-                            break;
-                        case 'TEXTAREA':
-                        case 'SELECT':
-                            bindAttrName = bindAttrName || 'value';
-                            eventType = 'change';
-                            break;
-                        default:
-                            if (this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]) {
-                                eventType = 'change';
-                                dataBinders[bindAttrName || ''] = async (component) => {
-                                    await this.observe(() => {
-                                        return this.renderValue(attrValue, extraContext);
-                                    }, (result) => {
-                                        component.setData(bindAttrName ? {
-                                            [bindAttrName]: result,
-                                        } : result);
-                                    });
-                                };
+                    if (this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]) {
+                        eventType = 'change';
+                        dataBinders[bindAttrName || ''] = async (component) => {
+                            await this.observe(() => {
+                                const result = this.renderValue(attrValue, extraContext);
+                                if (!bindAttrName && _.isObject(result)) {//未绑定具体属性时，实际则需要观察对象中的所有属性的变化
+                                    if (!isProxyObj(result)) {
+                                        console.warn(`${attrValue}的值不是响应式对象，可能无法观察其属性变化`);
+                                    }
+                                    Object.entries(result);
+                                }
+                                return result;
+                            }, (result) => {
+                                component.setData(bindAttrName ? {
+                                    [bindAttrName]: result,
+                                } : result);
+                            }, attrValue);
+                        };
+                    } else {
+                        switch (node.nodeName) {
+                            case 'INPUT':
+                                switch (node.getAttribute('type')) {
+                                    case 'checkbox':
+                                    case 'radio':
+                                        bindAttrName = bindAttrName || 'checked';
+                                        eventType = 'change';
+                                        break;
+                                    default:
+                                        bindAttrName = bindAttrName || 'value';
+                                        eventType = 'change';
+                                        break;
+                                }
                                 break;
-                            }
+                            case 'TEXTAREA':
+                            case 'SELECT':
+                                bindAttrName = bindAttrName || 'value';
+                                eventType = 'change';
+                                break;
+                        }
+                        if (bindAttrName) {
+                            await this.observe(() => {
+                                return this.renderValue(attrValue, extraContext);
+                            }, (result) => {
+                                if (typeof result == 'undefined') {
+                                    delete node[bindAttrName];
+                                } else {
+                                    node[bindAttrName] = result;
+                                }
+                            }, attrValue);
+                        }
                     }
-                    if (bindAttrName) {
-                        await this.observe(() => {
-                            return this.renderValue(attrValue, extraContext);
-                        }, (result) => {
-                            if (typeof result == 'undefined') {
-                                delete node[bindAttrName];
-                            } else {
-                                node[bindAttrName] = result;
-                            }
-                        });
-                    }
+
                     if (eventType) {
                         const eventHandler = (e) => {
                             let newValue;
@@ -770,24 +805,21 @@ class Component extends EventTarget {
         node.replaceWith(pointer);
         list.push(pointer);
 
-        let oldContent;//之前渲染好的内容
         await this.observe(() => {
-            return this.renderValue(condition, extraContext);
+            return !!this.renderValue(condition, extraContext);
         }, async (result) => {
-            if (!result) {//不需要展示
-                if (list[1]) {//在if块中
-                    remove(oldContent);
-                    list[1] = undefined;
-                }
-                return;
+            if (list[1]) {//在if块中
+                remove(list[1]);//移除旧内容
             }
 
-            const content = oldContent || await this.renderElement(node, extraContext);
-            insertAfter(pointer, content);
-            list[1] = content;
-
-            oldContent = content;
-        });
+            if (result) {//需要渲染
+                const content = await this.renderElement(node.cloneNode(true), extraContext);
+                insertAfter(pointer, content);
+                list[1] = content;
+            } else {//不需要渲染
+                list[1] = undefined;
+            }
+        }, condition);
 
         return list;
     }
@@ -825,7 +857,12 @@ class Component extends EventTarget {
         let oldObj;
         await this.observe(() => {
             const obj = this.renderValue(forObj, extraContext);
-            Object.keys(obj);//这一行是为了观察obj中keys的变化，这样的话当keys变化时才能被通知
+            if (_.isObject(obj)) {
+                if (!isProxyObj(obj)) {
+                    console.warn(`${forObj}的值不是响应式对象，可能无法观察其属性变化`);
+                }
+                Object.keys(obj);//这一行是为了观察obj中keys的变化，这样的话当keys变化时才能被通知
+            }
             return obj;
         }, async (result) => {
             const isArray = Array.isArray(result);
@@ -856,8 +893,7 @@ class Component extends EventTarget {
                         return;
                     }
 
-                    const copyNode = node.cloneNode(true);
-                    const content = await this.renderElement(copyNode, {
+                    const content = await this.renderElement(node.cloneNode(true), {
                         ...extraContext,
                         [keyName]: key,
                         [valueName]: value,
@@ -870,7 +906,7 @@ class Component extends EventTarget {
                     data.value = value;
                     data.content = content;
                     oldData = map[key] = data;
-                });
+                }, `${forObj}[${key}]`);
             }
             while (i < list.length - 1) {//后续index上原有的内容需要清除
                 i++;
@@ -878,7 +914,7 @@ class Component extends EventTarget {
             }
 
             oldObj = result;
-        });
+        }, forObj);
 
         return list;
     }
@@ -897,13 +933,15 @@ class Component extends EventTarget {
             if (childNode.nodeName == 'TEMPLATE') {
                 childNode.remove();
                 const slotName = childNode.getAttribute('wiy:slot') || '';
+                const templateFragment = nodesToDocumentFragment(childNode.content.childNodes);
                 slotRenderers[slotName] = async () => {
-                    return await this.renderNodes(childNode.content.childNodes, extraContext);
+                    return await this.renderNode(templateFragment.cloneNode(true), extraContext);
                 };
             }
         }
+        const templateFragment = nodesToDocumentFragment(node.childNodes);
         slotRenderers[''] = async () => {
-            return await this.renderNodes(node.childNodes, extraContext);
+            return await this.renderNode(templateFragment.cloneNode(true), extraContext);
         };
 
         await new Promise(async (resolve) => {
