@@ -631,18 +631,6 @@ class Component extends EventTarget {
         return await startObserve();
     }
 
-    async renderNode(node, extraContext) {
-        switch (node.nodeType) {
-            case Node.TEXT_NODE:
-            case Node.ATTRIBUTE_NODE:
-                return await this.renderTextOrAttr(node, extraContext);
-            case Node.DOCUMENT_FRAGMENT_NODE:
-                return await this.renderNodes(node.childNodes, extraContext);
-            case Node.ELEMENT_NODE:
-                return await this.renderElement(node, extraContext);
-        }
-    }
-
     async renderTextOrAttr(node, extraContext) {
         const originNodeValue = node.nodeValue;
         await this.observe(() => {
@@ -784,6 +772,8 @@ class Component extends EventTarget {
         } else {
             if (node.nodeName == 'SLOT') {
                 return await this.renderSlot(node, extraContext);
+            } else if (node.nodeName == 'TEMPLATE') {
+                return await this.renderNodes(node.content.childNodes, extraContext);
             } else {
                 await this.renderNodes(node.childNodes, extraContext);
                 return node;
@@ -930,7 +920,16 @@ class Component extends EventTarget {
     async renderNodes(nodes, extraContext) {
         const list = [];
         for (let node of Array.from(nodes)) {
-            list.push(await this.renderNode(node, extraContext));
+            let content = node;
+            switch (node.nodeType) {
+                case Node.TEXT_NODE:
+                    content = await this.renderTextOrAttr(node, extraContext);
+                    break;
+                case Node.ELEMENT_NODE:
+                    content = await this.renderElement(node, extraContext);
+                    break;
+            }
+            list.push(content);
         }
         return list;
     }
@@ -940,16 +939,15 @@ class Component extends EventTarget {
         for (let childNode of Array.from(node.childNodes)) {
             if (childNode.nodeName == 'TEMPLATE') {
                 childNode.remove();
-                const slotName = childNode.getAttribute('wiy:slot') || '';
-                const templateFragment = nodesToDocumentFragment(childNode.content.childNodes);
+                const slotName = removeAttr(childNode, 'wiy:slot') || '';
                 slotRenderers[slotName] = async () => {
-                    return await this.renderNode(templateFragment.cloneNode(true), extraContext);
+                    return await this.renderElement(childNode.cloneNode(true), extraContext);
                 };
             }
         }
         const templateFragment = nodesToDocumentFragment(node.childNodes);
         slotRenderers[''] = async () => {
-            return await this.renderNode(templateFragment.cloneNode(true), extraContext);
+            return await this.renderNodes(templateFragment.cloneNode(true).childNodes, extraContext);
         };
 
         await new Promise(async (resolve) => {
