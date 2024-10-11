@@ -82,10 +82,13 @@ const insertNodeAfter = (nodeToInsert, node) => {
 };
 const loadComponentDefine = async (component) => {
     //component应该是一个组件的定义对象，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个组件的定义对象
-    if (!(component instanceof Promise)) {
-        return component;
+    if (component instanceof Promise) {
+        component = (await component).default;
     }
-    return _.cloneDeep((await component).default);//将组件定义进行深拷贝，使组件间数据隔离
+    if (!component._uuid) {
+        component._uuid = _.uniqueId('component-define-');
+    }
+    return _.cloneDeep(component);//将组件定义进行深拷贝，使组件间数据隔离
 };
 const loadSourceString = async (source) => {
     //source应该是一个字符串，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个字符串
@@ -545,6 +548,14 @@ class Component extends EventTarget {
     }
 
     async mount(element) {
+        const afterMount = async () => {
+            element._wiyComponent = this;
+
+            const lifecycleFunction = this._config.lifecycle.mount;
+            lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
+            this.dispatchEvent(new Event('mount'));
+        };
+
         setElementAttrs(element, {
             uuid: this._uuid,
             ...this._config.attrs,
@@ -553,22 +564,19 @@ class Component extends EventTarget {
             element.addEventListener(name, value);
         });
 
-        let root = element;
-        if (this._config.template) {
-            root = element.attachShadow({ mode: 'open' });
+        const root = element.attachShadow({ mode: 'open' });
+
+        if (this._dom) {
+            root.appendChild(this._dom);
+            this._dom = root;
+            await afterMount();
+            return;
+        } else {
+            this._dom = root;
         }
-        this._dom = root;
 
-        root.innerHTML = await loadSourceString(this._config.template) || '';
-        await this.renderNodes(root.childNodes);
-
-        const afterMount = async () => {
-            element._wiyComponent = this;
-
-            const lifecycleFunction = this._config.lifecycle.mount;
-            lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
-            this.dispatchEvent(new Event('mount'));
-        };
+        this._dom.innerHTML = await loadSourceString(this._config.template) || '';
+        await this.renderNodes(this._dom.childNodes);
 
         let cssCode = await loadSourceString(this._config.style) || '';
         if (cssCode) {
@@ -580,7 +588,7 @@ class Component extends EventTarget {
             style.onload = async () => {
                 await afterMount();
             };
-            root.prepend(style);
+            this._dom.prepend(style);
         } else {
             await afterMount();
         }
@@ -1093,15 +1101,15 @@ class App extends EventTarget {
             };
 
             const define = await loadComponentDefine(this._config.pages[info.path] || this._config.pages[this._config.index]);
-            let page = this._pageCache[define];
+            let page = this._pageCache[define._uuid];
             if (page) {
-                // showPage(page);
+                showPage(page);
             } else {
                 page = new Page({
                     ...define,
                     app: this,
                 });
-                this._pageCache[define] = page;
+                this._pageCache[define._uuid] = page;
                 page.addEventListener('init', () => {
                     showPage(page);
                 });
