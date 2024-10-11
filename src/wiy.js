@@ -1064,6 +1064,7 @@ class App extends EventTarget {
                 this._router.go(this._config.index);
             }
         });
+        this._router.updateStatus(false);
 
         const lifecycleFunction = this._config.lifecycle.init;
         lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this)());
