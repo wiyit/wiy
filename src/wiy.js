@@ -517,6 +517,12 @@ class Component extends EventTarget {
         this._rawThis.dispatchEvent(new WiyEvent(eventType, data));
     }
 
+    onEventPath(e) {
+        return e.composedPath().some(node => {
+            return node == this || node == this._dom;
+        });
+    }
+
     getElement(id) {
         return this._dom ? this._dom.getElementById(id) : undefined;
     }
@@ -549,7 +555,7 @@ class Component extends EventTarget {
 
         let root = element;
         if (this._config.template) {
-            root = element.attachShadow({ mode: 'closed' });
+            root = element.attachShadow({ mode: 'open' });
         }
         this._dom = root;
 
