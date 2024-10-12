@@ -530,6 +530,11 @@ class Component extends EventTarget {
         return this._dom ? this._dom.getElementById(id) : undefined;
     }
 
+    getComponent(id) {
+        const element = this.getElement(id);
+        return element ? element._wiyComponent : undefined;
+    }
+
     addChild(component) {
         const oldParent = component._parent;
         if (oldParent) {
