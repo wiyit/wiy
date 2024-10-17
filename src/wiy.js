@@ -905,8 +905,7 @@ class Component extends EventTarget {
                         return;
                     }
 
-                    const oldValue = oldData ? oldData.value : undefined;
-                    if (oldValue == value) {//key对应的value没有发生变化
+                    if (oldData && oldData.value == value) {//key对应的value没有发生变化
                         return;
                     }
 
