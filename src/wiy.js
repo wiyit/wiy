@@ -670,6 +670,7 @@ class Component extends EventTarget {
 
         const listeners = {};
         const dataBinders = {};
+        let slotName;
         for (let attrNode of Array.from(node.attributes)) {//需先转成数组，防止遍历过程中删除属性导致遍历出错
             await this.renderTextOrAttr(attrNode, extraContext);
             const attrName = attrNode.nodeName;
@@ -782,6 +783,8 @@ class Component extends EventTarget {
                             eventHandler,
                         ];
                     }
+                } else if (attrName == 'wiy:slot') {
+                    slotName = attrValue;
                 }
             }
         }
@@ -792,7 +795,18 @@ class Component extends EventTarget {
             if (node.nodeName == 'SLOT') {
                 return await this.renderSlot(node, extraContext);
             } else if (node.nodeName == 'TEMPLATE') {
-                return await this.renderNodes(node.content.childNodes, extraContext);
+                if (typeof slotName != 'undefined') {
+                    node._wiyTemplate = {
+                        slot: slotName,
+                        context: {
+                            ...this._config.context,
+                            ...extraContext,
+                        },
+                    };
+                    return node;
+                } else {
+                    return await this.renderNodes(node.content.childNodes, extraContext);
+                }
             } else {
                 await this.renderNodes(node.childNodes, extraContext);
                 return node;
@@ -957,10 +971,19 @@ class Component extends EventTarget {
         for (let childNode of Array.from(node.childNodes)) {
             if (childNode.nodeName == 'TEMPLATE') {
                 childNode.remove();
-                const slotName = removeAttr(childNode, 'wiy:slot') || '';
-                slotRenderers[slotName] = async () => {
-                    return await this.renderElement(childNode.cloneNode(true), extraContext);
-                };
+                const content = await this.renderElement(childNode, extraContext);
+                const templates = toNodeList(content).filter(node => {
+                    return node.nodeName == 'TEMPLATE';
+                });
+                templates.forEach(template => {
+                    const {
+                        slot,
+                        context,
+                    } = template._wiyTemplate;
+                    slotRenderers[slot] = async () => {
+                        return await this.renderElement(template.cloneNode(true), context);
+                    };
+                });
             }
         }
         const templateFragment = nodesToDocumentFragment(node.childNodes);
