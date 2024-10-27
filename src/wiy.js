@@ -1178,7 +1178,7 @@ class Router extends EventTarget {
     updateStatus(change = true) {
         const base = this._base;
         const url = new URL(location);
-        const path = url.pathname;
+        const path = url.pathname.replaceAll(/\/{2,}/g, '/');
 
         if (path.startsWith(base)) {
             this._current.path = path.slice(base.length);
