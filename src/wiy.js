@@ -453,7 +453,7 @@ class Component extends EventTarget {
         });
 
         this.init().then(() => {
-            this.dispatchEvent(new Event('init'));
+            this.dispatchEvent(new WiyEvent('init'));
         });
     }
 
@@ -558,7 +558,7 @@ class Component extends EventTarget {
 
             const lifecycleFunction = this._config.lifecycle.mount;
             lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
-            this.dispatchEvent(new Event('mount'));
+            this.dispatchEvent(new WiyEvent('mount'));
         };
 
         setElementAttrs(element, {
@@ -611,14 +611,14 @@ class Component extends EventTarget {
         const afterUnmount = async () => {
             const lifecycleFunction = this._config.lifecycle.unmount;
             lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
-            this.dispatchEvent(new Event('unmount'));
+            this.dispatchEvent(new WiyEvent('unmount'));
         };
 
         await afterUnmount();
     }
 
     async observe(func, callback, info) {
-        let firstRender = true;
+        let firstObserve = true;
         let oldResult;
         const startObserve = async () => {
             let result;
@@ -629,16 +629,17 @@ class Component extends EventTarget {
                 if (result instanceof Promise) {
                     result = await result;
                 }
-                if (!firstRender && !_.isObject(result) && oldResult == result) {
+                if (!firstObserve && !_.isObject(result) && oldResult == result) {
                     return;
                 }
-                firstRender = false;
-                oldResult = result;
                 needCallback = true;
             } finally {
                 OBSERVER_MANAGER.pop();
                 if (needCallback) {
-                    return await callback(result);
+                    const callbackResult = await callback(result, firstObserve);
+                    firstObserve = false;
+                    oldResult = result;
+                    return callbackResult;
                 }
             }
         };
@@ -762,24 +763,35 @@ class Component extends EventTarget {
 
                     if (eventType) {
                         const eventHandler = (e) => {
-                            let newValue;
+                            let newData;
                             if (e instanceof WiyEvent) {
-                                if (bindAttrName) {
-                                    newValue = e.data[bindAttrName];
-                                } else {
-                                    newValue = e.data;
+                                newData = e.data;
+                            } else {
+                                newData = node;
+                            }
+                            if (bindAttrName) {
+                                if (bindAttrName in newData) {
+                                    this.renderValue(`${attrValue}=__newValue__`, {
+                                        ...extraContext,
+                                        __newValue__: newData[bindAttrName],
+                                    });
                                 }
                             } else {
-                                newValue = node[bindAttrName];
+                                Object.entries(newData).forEach(([key, value]) => {
+                                    this.renderValue(`${attrValue}['${key}']=__newValue__`, {
+                                        ...extraContext,
+                                        __newValue__: value,
+                                    });
+                                });
                             }
-                            this.renderValue(`${attrValue}=__newValue__`, {
-                                ...extraContext,
-                                __newValue__: newValue,
-                            });
                         };
                         node.addEventListener(eventType, eventHandler);
                         listeners[eventType] = [
                             ...(listeners[eventType] || []),
+                            eventHandler,
+                        ];
+                        listeners['datainit'] = [
+                            ...(listeners['datainit'] || []),
                             eventHandler,
                         ];
                     }
@@ -1066,7 +1078,7 @@ class App extends EventTarget {
 
         this.init().then(() => {
             this._router.updateStatus();
-            this.dispatchEvent(new Event('init'));
+            this.dispatchEvent(new WiyEvent('init'));
         });
     }
 
@@ -1165,7 +1177,7 @@ class Router extends EventTarget {
         });
 
         this.init().then(() => {
-            this.dispatchEvent(new Event('init'));
+            this.dispatchEvent(new WiyEvent('init'));
         });
     }
 
@@ -1237,7 +1249,7 @@ class Storage extends EventTarget {
         });
 
         this.init().then(() => {
-            this.dispatchEvent(new Event('init'));
+            this.dispatchEvent(new WiyEvent('init'));
         });
     }
 
