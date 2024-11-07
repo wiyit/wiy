@@ -94,8 +94,8 @@ const loadSourceString = async (source) => {
     //source应该是一个字符串，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个字符串
     return source instanceof Promise ? (await source).default : source;
 };
-const loadPluginMethod = async (plugin) => {
-    //plugin应该是一个插件的安装函数，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个插件的安装函数
+const loadPluginDefine = async (plugin) => {
+    //plugin应该是一个插件的定义对象，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个插件的定义对象
     return plugin instanceof Promise ? (await plugin).default : plugin;
 };
 
@@ -1100,8 +1100,8 @@ class App extends EventTarget {
         }
 
         for (let plugin of (this._config.plugins || [])) {
-            const method = await loadPluginMethod(plugin);
-            await method(this);
+            const define = await loadPluginDefine(plugin);
+            await define.install(this);
         }
 
         this._router.addEventListener('change', e => {
