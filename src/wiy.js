@@ -512,6 +512,10 @@ class Component extends EventTarget {
         return this._config.attrs[name];
     }
 
+    hasAttr(name) {
+        return typeof this.attr(name) != 'undefined';
+    }
+
     on(eventType, listener) {
         this._rawThis.addEventListener(eventType, listener);
     }
@@ -700,6 +704,22 @@ class Component extends EventTarget {
                             node.innerHTML = result;
                         }
                     }, attrValue);
+                } else if (attrName.startsWith('wiy:attr-')) {
+                    let bindAttrName;
+                    if (attrName.startsWith('wiy:attr-')) {
+                        bindAttrName = attrName.slice(9);
+                    }
+                    if (bindAttrName) {
+                        await this.observe(() => {
+                            return this.renderValue(attrValue, extraContext);
+                        }, (result) => {
+                            if (typeof result == 'undefined') {
+                                node.removeAttribute(bindAttrName);
+                            } else {
+                                node.setAttribute(bindAttrName, result);
+                            }
+                        }, attrValue);
+                    }
                 } else if (attrName.startsWith('wiy:data')) {
                     let bindAttrName;
                     if (attrName.startsWith('wiy:data-')) {
