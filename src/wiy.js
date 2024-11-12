@@ -516,6 +516,10 @@ class Component extends EventTarget {
         return typeof this.attr(name) != 'undefined';
     }
 
+    hasSlotTemplate(name = '') {
+        return typeof this._config.slotRenderers[name] != 'undefined';
+    }
+
     on(eventType, listener) {
         this._rawThis.addEventListener(eventType, listener);
     }
