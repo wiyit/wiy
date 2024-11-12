@@ -1016,16 +1016,20 @@ class Component extends EventTarget {
                         slot,
                         context,
                     } = template._wiyTemplate;
-                    slotRenderers[slot] = async () => {
-                        return await this.renderElement(template.cloneNode(true), context);
-                    };
+                    if (template.content.childNodes.length > 0) {
+                        slotRenderers[slot] = async () => {
+                            return await this.renderElement(template.cloneNode(true), context);
+                        };
+                    }
                 });
             }
         }
-        const templateFragment = nodesToDocumentFragment(node.childNodes);
-        slotRenderers[''] = async () => {
-            return await this.renderNodes(templateFragment.cloneNode(true).childNodes, extraContext);
-        };
+        if (node.childNodes.length > 0) {
+            const templateFragment = nodesToDocumentFragment(node.childNodes);
+            slotRenderers[''] = async () => {
+                return await this.renderNodes(templateFragment.cloneNode(true).childNodes, extraContext);
+            };
+        }
 
         await new Promise(async (resolve) => {
             const define = await loadComponentDefine(this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]);
