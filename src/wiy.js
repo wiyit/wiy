@@ -447,7 +447,7 @@ class Component extends EventTarget {
             _children: {
                 value: new Set(),//需要注意内存泄漏
             },
-            _dom: {
+            _element: {
                 writable: true,
             },
         });
@@ -530,12 +530,12 @@ class Component extends EventTarget {
 
     onEventPath(e) {
         return e.composedPath().some(node => {
-            return node == this || node == this._dom;
+            return node == this || node == this._element;
         });
     }
 
     getElement(id) {
-        return this._dom ? this._dom.getElementById(id) : undefined;
+        return this._element ? this._element.shadowRoot.getElementById(id) : undefined;
     }
 
     getComponent(id) {
@@ -561,9 +561,11 @@ class Component extends EventTarget {
     }
 
     async mount(element) {
-        const afterMount = async () => {
-            element._wiyComponent = this;
+        const oldElement = this._element;
+        this._element = element;
+        this._element._wiyComponent = this;
 
+        const afterMount = async () => {
             const lifecycleFunction = this._config.lifecycle.mount;
             lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
             this.dispatchEvent(new WiyEvent('mount'));
@@ -579,17 +581,14 @@ class Component extends EventTarget {
 
         const root = element.attachShadow({ mode: 'open' });
 
-        if (this._dom) {
-            root.appendChild(this._dom);
-            this._dom = root;
+        if (oldElement) {
+            root.appendChild(oldElement.shadowRoot);
             await afterMount();
             return;
-        } else {
-            this._dom = root;
         }
 
-        this._dom.innerHTML = await loadSourceString(this._config.template) || '';
-        await this.renderNodes(this._dom.childNodes);
+        root.innerHTML = await loadSourceString(this._config.template) || '';
+        await this.renderNodes(root.childNodes);
 
         let cssCode = await loadSourceString(this._config.style) || '';
         if (cssCode) {
@@ -601,7 +600,7 @@ class Component extends EventTarget {
             style.onload = async () => {
                 await afterMount();
             };
-            this._dom.prepend(style);
+            root.prepend(style);
         } else {
             await afterMount();
         }
@@ -614,7 +613,10 @@ class Component extends EventTarget {
             child.unmount();
         });
 
-        this._dom = undefined;
+        if (this._element) {
+            this._element._wiyComponent = undefined;
+            this._element = undefined;
+        }
 
         const afterUnmount = async () => {
             const lifecycleFunction = this._config.lifecycle.unmount;
@@ -652,7 +654,7 @@ class Component extends EventTarget {
             }
         };
         const observer = new Observer(async () => {
-            if (this._dom) {
+            if (this._element) {
                 await startObserve();
             }
         }, info, this);
