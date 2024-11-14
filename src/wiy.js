@@ -453,7 +453,7 @@ class Component extends EventTarget {
         });
 
         this.init().then(() => {
-            this.dispatchEvent(new WiyEvent('init'));
+            this.trigger('init');
         });
     }
 
@@ -474,7 +474,7 @@ class Component extends EventTarget {
         });
         Object.entries(this._config.listeners || {}).forEach(([name, value]) => {
             value.forEach(listener => {
-                this.addEventListener(name, listener);
+                this.on(name, listener);
             });
         });
         let data = this._config.data;
@@ -568,7 +568,7 @@ class Component extends EventTarget {
         const afterMount = async () => {
             const lifecycleFunction = this._config.lifecycle.mount;
             lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
-            this.dispatchEvent(new WiyEvent('mount'));
+            this.trigger('mount');
         };
 
         setElementAttrs(element, {
@@ -613,15 +613,21 @@ class Component extends EventTarget {
             child.unmount();
         });
 
-        if (this._element) {
-            this._element._wiyComponent = undefined;
-            this._element = undefined;
+        let oldElement = this._element;
+        if (!oldElement) {
+            return;
         }
 
+        this._element._wiyComponent = undefined;
+        this._element = undefined;
+
         const afterUnmount = async () => {
+            const data = {
+                element: oldElement,
+            };
             const lifecycleFunction = this._config.lifecycle.unmount;
-            lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
-            this.dispatchEvent(new WiyEvent('unmount'));
+            lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)(data));
+            this.trigger('unmount', data);
         };
 
         await afterUnmount();
@@ -916,9 +922,22 @@ class Component extends EventTarget {
             }
 
             if (newContent) {
-                const pointer = toNodeList(list[index - 1]).slice(-1)[0];
-                insertAfter(pointer, newContent);
-                list[index] = newContent;
+                let prevIndex = index - 1;
+                while (prevIndex >= 0) {
+                    const prevContent = list[prevIndex];//前一项的内容
+                    if (prevContent) {
+                        const nodeList = toNodeList(prevContent);
+                        for (let i = nodeList.length - 1; i >= 0; i--) {//找到最后一个在dom中的节点
+                            const node = nodeList[i];
+                            if (node.parentNode == pointer.parentNode) {//节点没有被移除
+                                insertAfter(node, newContent);
+                                list[index] = newContent;
+                                return;
+                            }
+                        }
+                    }
+                    prevIndex--;
+                }
             }
         };
 
@@ -1047,9 +1066,9 @@ class Component extends EventTarget {
                 ...config,
             });
             this.addChild(component);
-            component.addEventListener('init', async () => {
+            component.on('init', async () => {
                 node.style.visibility = 'hidden';
-                component.addEventListener('mount', () => {
+                component.on('mount', () => {
                     node.style.visibility = '';
                 });
 
@@ -1179,7 +1198,7 @@ class App extends EventTarget {
                     app: this,
                 });
                 this._pageCache[define._uuid] = page;
-                page.addEventListener('init', () => {
+                page.on('init', () => {
                     showPage(page);
                 });
             }
