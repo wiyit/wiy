@@ -929,7 +929,7 @@ class Component extends EventTarget {
                         const nodeList = toNodeList(prevContent);
                         for (let i = nodeList.length - 1; i >= 0; i--) {//找到最后一个在dom中的节点
                             const node = nodeList[i];
-                            if (node.parentNode == pointer.parentNode) {//节点没有被移除
+                            if (node.parentNode == pointer.parentNode || node.isConnected) {//节点没有被移除
                                 insertAfter(node, newContent);
                                 list[index] = newContent;
                                 return;
