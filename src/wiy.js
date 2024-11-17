@@ -732,6 +732,32 @@ class Component extends EventTarget {
                             }
                         }, attrValue);
                     }
+                } else if (attrName.startsWith('wiy:style')) {
+                    let bindAttrName;
+                    if (attrName.startsWith('wiy:style-')) {
+                        bindAttrName = attrName.slice(10);
+                    } else if (attrName != 'wiy:style') {
+                        continue;
+                    }
+
+                    await this.observe(() => {
+                        const result = this.renderValue(attrValue, extraContext);
+                        if (!bindAttrName && _.isObject(result)) {//未绑定具体属性时，实际则需要观察对象中的所有属性的变化
+                            if (!isProxyObj(result)) {
+                                console.warn(`${attrValue}的值不是响应式对象，可能无法观察其属性变化`);
+                            }
+                            Object.entries(result);
+                        }
+                        return result;
+                    }, (result) => {
+                        if (bindAttrName) {
+                            node.style[bindAttrName] = result;
+                        } else {
+                            Object.entries(result || {}).forEach(([key, value]) => {
+                                node.style[key] = value;
+                            });
+                        }
+                    }, attrValue);
                 } else if (attrName.startsWith('wiy:data')) {
                     let bindAttrName;
                     if (attrName.startsWith('wiy:data-')) {
