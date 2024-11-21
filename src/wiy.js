@@ -535,6 +535,9 @@ class Component extends EventTarget {
     }
 
     getElement(id) {
+        if (!id) {
+            return this._element;
+        }
         return this._element ? this._element.shadowRoot.getElementById(id) : undefined;
     }
 
