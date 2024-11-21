@@ -317,7 +317,7 @@ const tryCreateProxy = (obj) => {
             const oldValue = Reflect.get(target, prop);
             value = tryCreateProxy(value);
             const result = Reflect.set(target, prop, value);
-            if (value != oldValue
+            if (propsChanged || value != oldValue
                 || (Array.isArray(target) && prop == 'length')) {
                 OBSERVER_MANAGER.notify(target, prop, propsChanged);
             }
