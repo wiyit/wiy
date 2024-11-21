@@ -274,10 +274,10 @@ class Observer {
     }
 }
 const isProxyObj = (obj) => {
-    return typeof obj == 'object' && !!obj._proxyUuid;
+    return _.isObject(obj) && !!obj._proxyUuid;
 };
 const tryCreateProxy = (obj) => {
-    if (typeof obj != 'object' || isProxyObj(obj) || obj instanceof Date || obj instanceof Node) {
+    if (!_.isObject(obj) || isProxyObj(obj) || obj instanceof Date || obj instanceof Node) {
         return obj;
     }
     Object.defineProperties(obj, {
@@ -392,7 +392,7 @@ const toNodeList = (obj) => {
     } else {
         const list = [];
         for (let item of obj) {
-            if (typeof item == 'undefined') {
+            if (_.isUndefined(item)) {
                 continue;
             }
             for (let node of toNodeList(item)) {
@@ -478,7 +478,7 @@ class Component extends EventTarget {
             });
         });
         let data = this._config.data;
-        if (typeof data == 'function') {
+        if (_.isFunction(data)) {
             data = data.bind(this._proxyThis)();
         }
         Object.entries(data || {}).forEach(([name, value]) => {
@@ -502,7 +502,7 @@ class Component extends EventTarget {
 
     setData(data) {
         Object.entries(data || {}).forEach(([name, value]) => {
-            if (typeof value != 'undefined') {
+            if (!_.isUndefined(value)) {
                 this._proxyThis[name] = value;
             }
         });
@@ -513,11 +513,11 @@ class Component extends EventTarget {
     }
 
     hasAttr(name) {
-        return typeof this.attr(name) != 'undefined';
+        return !_.isUndefined(this.attr(name));
     }
 
     hasSlotTemplate(name = '') {
-        return typeof this._config.slotRenderers[name] != 'undefined';
+        return !_.isUndefined(this._config.slotRenderers[name]);
     }
 
     on(eventType, listener) {
@@ -697,7 +697,7 @@ class Component extends EventTarget {
                     const eventType = attrName.slice(6);
                     const eventHandler = (e) => {
                         const handler = this.renderValue(attrValue, extraContext);
-                        if (typeof handler == 'function') {
+                        if (_.isFunction(handler)) {
                             handler(e);
                         }
                     };
@@ -710,7 +710,7 @@ class Component extends EventTarget {
                     await this.observe(() => {
                         return this.renderValue(attrValue, extraContext);
                     }, (result) => {
-                        if (typeof result == 'undefined') {
+                        if (_.isUndefined(result)) {
                             delete node.innerHTML;
                         } else {
                             node.innerHTML = result;
@@ -725,7 +725,7 @@ class Component extends EventTarget {
                         await this.observe(() => {
                             return this.renderValue(attrValue, extraContext);
                         }, (result) => {
-                            if (typeof result == 'undefined') {
+                            if (_.isUndefined(result)) {
                                 node.removeAttribute(bindAttrName);
                             } else {
                                 node.setAttribute(bindAttrName, result);
@@ -810,7 +810,7 @@ class Component extends EventTarget {
                             await this.observe(() => {
                                 return this.renderValue(attrValue, extraContext);
                             }, (result) => {
-                                if (typeof result == 'undefined') {
+                                if (_.isUndefined(result)) {
                                     delete node[bindAttrName];
                                 } else {
                                     node[bindAttrName] = result;
@@ -865,7 +865,7 @@ class Component extends EventTarget {
             if (node.nodeName == 'SLOT') {
                 return await this.renderSlot(node, extraContext);
             } else if (node.nodeName == 'TEMPLATE') {
-                if (typeof slotName != 'undefined') {
+                if (!_.isUndefined(slotName)) {
                     node._wiyTemplate = {
                         slot: slotName,
                         context: {
