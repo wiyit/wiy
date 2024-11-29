@@ -315,7 +315,10 @@ const tryCreateProxy = (obj) => {
         set(target, prop, value) {//如果加了receiver，就会和defineProperty重复触发
             const propsChanged = !Reflect.has(target, prop);
             const oldValue = Reflect.get(target, prop);
-            value = tryCreateProxy(value);
+            const propDesc = Reflect.getOwnPropertyDescriptor(target, prop);
+            if (propDesc && propDesc.writable) {
+                value = tryCreateProxy(value);
+            }
             const result = Reflect.set(target, prop, value);
             if (propsChanged || value != oldValue
                 || (Array.isArray(target) && prop == 'length')) {
@@ -544,6 +547,10 @@ class Component extends EventTarget {
     getComponent(id) {
         const element = this.getElement(id);
         return element ? element._wiyComponent : undefined;
+    }
+
+    getParent() {
+        return this._parent;
     }
 
     addChild(component) {
