@@ -583,6 +583,17 @@ class Component extends EventTarget {
         });
 
         const root = element.attachShadow({ mode: 'open' });
+        Object.defineProperties(root, {//hack，某些三方库在shadow dom中有问题
+            parentNode: {
+                value: element,
+            },
+            scrollLeft: {
+                value: 0,
+            },
+            scrollTop: {
+                value: 0,
+            },
+        });
 
         if (oldElement) {
             root.appendChild(oldElement.shadowRoot);
