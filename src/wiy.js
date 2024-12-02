@@ -381,8 +381,8 @@ const insertAfter = (node, obj) => {
     insertNodeAfter(temp, node);
     replaceWith(temp, obj);
 };
-const remove = (obj) => {
-    unmount(obj);
+const remove = (obj, needUnmount = true) => {
+    needUnmount && unmount(obj);
     if (obj instanceof Node) {
         obj.remove();
     } else {
@@ -533,7 +533,7 @@ class Component extends EventTarget {
 
     onEventPath(e) {
         return e.composedPath().some(node => {
-            return node == this || node == this._element;
+            return node == this || node._rawThis == this._rawThis || node == this._element;
         });
     }
 
@@ -558,16 +558,16 @@ class Component extends EventTarget {
         if (oldParent) {
             oldParent.removeChild(component);
         }
-        this._children.add(component);
+        this._children.add(component._rawThis);
         component._parent = this;
     }
 
     removeChild(component) {
-        if (!this._children.has(component)) {
+        if (!this._children.has(component._rawThis)) {
             throw new Error(`${component._uuid}不是${this._uuid}的子组件`);
         }
-        this._children.delete(component);
-        component._parent = null;
+        this._children.delete(component._rawThis);
+        component._parent = undefined;
     }
 
     async mount(element) {
@@ -630,20 +630,22 @@ class Component extends EventTarget {
     async unmount() {
         OBSERVER_MANAGER.stop(this);
 
+        const oldParent = this._parent;
+        this._parent.removeChild(this);
+
+        const oldChildren = new Set(this._children);
         this._children.forEach(child => {
             child.unmount();
         });
 
-        let oldElement = this._element;
-        if (!oldElement) {
-            return;
-        }
-
+        const oldElement = this._element;
         this._element._wiyComponent = undefined;
         this._element = undefined;
 
         const afterUnmount = async () => {
             const data = {
+                parent: oldParent,
+                children: oldChildren,
                 element: oldElement,
             };
             const lifecycleFunction = this._config.lifecycle.unmount;
@@ -964,7 +966,7 @@ class Component extends EventTarget {
             }
 
             if (oldContent && oldIndex >= 0) {//在for块中
-                remove(oldContent);
+                remove(oldContent, oldContent != newContent);
                 list[oldIndex] = undefined;
             }
 
@@ -1019,7 +1021,10 @@ class Component extends EventTarget {
                 await this.observe(() => {
                     return result[key];//这一行是为了观察obj中该key对应的value的变化，这样的话当该key对应的value变化时才能被通知
                 }, async (value) => {
+                    const oldContent = oldData ? oldData.content : undefined;
+
                     if (!(key in result)) {//key被移除
+                        adjustContent(oldContent);//清除内容
                         return;
                     }
 
@@ -1032,8 +1037,6 @@ class Component extends EventTarget {
                         [keyName]: key,
                         [valueName]: value,
                     });
-
-                    const oldContent = oldData ? oldData.content : undefined;
                     adjustContent(oldContent, content, index);//更新内容
 
                     const data = oldData || {};
