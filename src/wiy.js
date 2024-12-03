@@ -609,22 +609,16 @@ class Component extends EventTarget {
         }
 
         root.innerHTML = await loadSourceString(this._config.template) || '';
-        await this.renderNodes(root.childNodes);
 
-        let cssCode = await loadSourceString(this._config.style) || '';
+        const cssCode = await loadSourceString(this._config.style) || '';
         if (cssCode) {
-            cssCode = cssCode.replaceAll(':root', ':root,:host');
-
-            const style = document.createElement('link');
-            style.rel = 'stylesheet';
-            style.href = URL.createObjectURL(new Blob([cssCode], { type: 'text/css' }));
-            style.onload = async () => {
-                await afterMount();
-            };
+            const style = document.createElement('style');
+            style.innerHTML = cssCode;
             root.prepend(style);
-        } else {
-            await afterMount();
         }
+
+        await this.renderNodes(root.childNodes);
+        await afterMount();
     }
 
     async unmount() {
@@ -1192,9 +1186,8 @@ class App extends EventTarget {
 
         const cssCode = await loadSourceString(this._config.style) || '';
         if (cssCode) {
-            const style = document.createElement('link');
-            style.rel = 'stylesheet';
-            style.href = URL.createObjectURL(new Blob([cssCode], { type: 'text/css' }));
+            const style = document.createElement('style');
+            style.innerHTML = cssCode;
             document.head.appendChild(style);
         }
 
