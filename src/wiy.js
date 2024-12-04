@@ -1237,7 +1237,9 @@ class App extends EventTarget {
     }
 
     registerMethod(name, method) {
-        this[name] = method;
+        Object.defineProperty(this, name, {
+            value: method.bind(this),
+        });
     }
 
     newComponent(define) {
