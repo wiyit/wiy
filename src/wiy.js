@@ -1,17 +1,5 @@
 import _ from 'lodash';
 
-const getElementAttrs = (element) => {
-    const attrs = {};
-    for (let attr of element.attributes) {
-        attrs[attr.nodeName] = attr.nodeValue;
-    }
-    return attrs;
-};
-const setElementAttrs = (element, attrs) => {
-    Object.entries(attrs).forEach(([name, value]) => {
-        element.setAttribute(name, value);
-    });
-};
 const removeAttrNode = (element, name) => {
     const attrNode = element.getAttributeNode(name);
     return attrNode && element.removeAttributeNode(attrNode);
@@ -512,11 +500,11 @@ class Component extends EventTarget {
     }
 
     attr(name) {
-        return this._config.attrs[name];
+        return this._element.getAttribute(name);
     }
 
     hasAttr(name) {
-        return !_.isUndefined(this.attr(name));
+        return this._element.hasAttribute(name);
     }
 
     hasSlotTemplate(name = '') {
@@ -541,7 +529,7 @@ class Component extends EventTarget {
         if (!id) {
             return this._element;
         }
-        return this._element ? this._element.shadowRoot.getElementById(id) : undefined;
+        return this._element.shadowRoot.getElementById(id);
     }
 
     getComponent(id) {
@@ -581,10 +569,7 @@ class Component extends EventTarget {
             this.trigger('mount');
         };
 
-        setElementAttrs(element, {
-            uuid: this._uuid,
-            ...this._config.attrs,
-        });
+        element.setAttribute('uuid', this._uuid);
         Object.entries(this._config.listeners || {}).forEach(([name, value]) => {
             element.addEventListener(name, value);
         });
@@ -727,7 +712,7 @@ class Component extends EventTarget {
                     await this.observe(() => {
                         return this.renderValue(attrValue, extraContext);
                     }, (result) => {
-                        if (_.isUndefined(result)) {
+                        if (_.isUndefined(result) || _.isNull(result)) {
                             delete node.innerHTML;
                         } else {
                             node.innerHTML = result;
@@ -742,7 +727,7 @@ class Component extends EventTarget {
                         await this.observe(() => {
                             return this.renderValue(attrValue, extraContext);
                         }, (result) => {
-                            if (_.isUndefined(result)) {
+                            if (_.isUndefined(result) || _.isNull(result)) {
                                 node.removeAttribute(bindAttrName);
                             } else {
                                 node.setAttribute(bindAttrName, result);
@@ -827,7 +812,7 @@ class Component extends EventTarget {
                             await this.observe(() => {
                                 return this.renderValue(attrValue, extraContext);
                             }, (result) => {
-                                if (_.isUndefined(result)) {
+                                if (_.isUndefined(result) || _.isNull(result)) {
                                     delete node[bindAttrName];
                                 } else {
                                     node[bindAttrName] = result;
@@ -1099,7 +1084,6 @@ class Component extends EventTarget {
         await new Promise(async (resolve) => {
             const define = await loadComponentDefine(this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]);
             const config = {
-                attrs: getElementAttrs(node),
                 listeners,
                 dataBinders,
                 slotRenderers,
