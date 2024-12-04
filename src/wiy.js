@@ -1235,6 +1235,17 @@ class App extends EventTarget {
     registerComponent(name, component) {
         this._config.components[name.toUpperCase()] = component;
     }
+
+    registerMethod(name, method) {
+        this[name] = method;
+    }
+
+    newComponent(define) {
+        return new Component({
+            ...define,
+            app: this,
+        });
+    }
 }
 
 class Router extends EventTarget {
