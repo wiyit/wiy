@@ -515,8 +515,8 @@ class Component extends EventTarget {
         this._rawThis.addEventListener(eventType, listener);
     }
 
-    trigger(eventType, data) {
-        this._rawThis.dispatchEvent(new WiyEvent(eventType, data));
+    trigger(eventType, data, cause) {
+        this._rawThis.dispatchEvent(new WiyEvent(eventType, data, cause));
     }
 
     onEventPath(e) {
@@ -1271,12 +1271,12 @@ class Router extends EventTarget {
     }
 
     async init() {
-        window.addEventListener('popstate', () => {
-            this.updateStatus();
+        window.addEventListener('popstate', (e) => {
+            this.updateStatus(true, e);
         });
     }
 
-    updateStatus(change = true) {
+    updateStatus(change = true, cause) {
         const base = this._base;
         const url = new URL(location);
         const path = url.pathname.replaceAll(/\/{2,}/g, '/');
@@ -1290,7 +1290,7 @@ class Router extends EventTarget {
             }, {});
         }
 
-        change && this.dispatchEvent(new WiyEvent('change', this._current));
+        change && this.dispatchEvent(new WiyEvent('change', this._current, cause));
     }
 
     getCurrent() {
@@ -1320,8 +1320,8 @@ class EventBus extends EventTarget {
         target.addEventListener(eventType, listener);
     }
 
-    trigger(eventType, data, target = this) {
-        target.dispatchEvent(new WiyEvent(eventType, data));
+    trigger(eventType, data, cause, target = this) {
+        target.dispatchEvent(new WiyEvent(eventType, data, cause));
     }
 }
 
@@ -1351,9 +1351,10 @@ class Storage extends EventTarget {
 }
 
 class WiyEvent extends Event {
-    constructor(type, data) {
+    constructor(type, data, cause) {
         super(type);
         this.data = data;
+        this.cause = cause;
     }
 }
 
