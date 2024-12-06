@@ -1131,6 +1131,10 @@ class App extends EventTarget {
             _pageCache: {
                 value: {},
             },
+            _currentPage: {
+                value: undefined,
+                writable: true,
+            },
             _router: {
                 value: new Router(),
             },
@@ -1195,7 +1199,7 @@ class App extends EventTarget {
     }
 
     async renderPage(info) {
-        await new Promise(async (resolve) => {
+        const currentPage = await new Promise(async (resolve) => {
             const showPage = async (page) => {
                 this._config.container.innerHTML = '';
                 const node = document.createElement('wiy-page');
@@ -1207,7 +1211,11 @@ class App extends EventTarget {
             const define = await loadComponentDefine(this._config.pages[info.path] || this._config.pages[this._config.index]);
             let page = this._pageCache[define._uuid];
             if (page) {
-                showPage(page);
+                if (page == this._currentPage) {
+                    resolve(page);
+                } else {
+                    showPage(page);
+                }
             } else {
                 page = new Page({
                     ...define,
@@ -1219,6 +1227,7 @@ class App extends EventTarget {
                 });
             }
         });
+        this._currentPage = currentPage;
     }
 
     registerComponent(name, component) {
