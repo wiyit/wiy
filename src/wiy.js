@@ -443,18 +443,28 @@ class Component extends EventTarget {
             },
         });
 
-        this.init().then(() => {
-            this.trigger('init');
-        });
+        this.init();
     }
 
     async init() {
+        const beforeInit = async () => {
+            const lifecycleFunction = this._config.lifecycle.beforeInit;
+            lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
+            this.trigger('beforeinit');
+        };
+        const afterInit = async () => {
+            const lifecycleFunction = this._config.lifecycle.init;
+            lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
+            this.trigger('init');
+        };
+
         this._config.context = {
             this: this._proxyThis,
         };
         this._config.components = this._config.components || {};
         this._config.lifecycle = this._config.lifecycle || {};
 
+        await beforeInit();
         Object.entries(this._config.components).forEach(([name, value]) => {
             this._config.components[name.toUpperCase()] = value;
         });
@@ -478,9 +488,7 @@ class Component extends EventTarget {
         for (let [name, value] of Object.entries(this._config.dataBinders || {})) {
             await value(this);
         }
-
-        const lifecycleFunction = this._config.lifecycle.init;
-        lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
+        await afterInit();
     }
 
     getUuid() {
@@ -560,14 +568,35 @@ class Component extends EventTarget {
 
     async mount(element) {
         const oldElement = this._element;
-        this._element = element;
-        this._element._wiyComponent = this;
 
+        const beforeRender = async () => {
+            const lifecycleFunction = this._config.lifecycle.beforeRender;
+            lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
+            this.trigger('beforerender');
+        };
+        const afterRender = async () => {
+            const lifecycleFunction = this._config.lifecycle.render;
+            lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
+            this.trigger('render');
+        };
+        const beforeMount = async () => {
+            const data = {
+                oldElement,
+                element,
+            };
+            const lifecycleFunction = this._config.lifecycle.beforeMount;
+            lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)(data));
+            this.trigger('beforemount', data);
+        };
         const afterMount = async () => {
             const lifecycleFunction = this._config.lifecycle.mount;
             lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
             this.trigger('mount');
         };
+
+        await beforeMount();
+        this._element = element;
+        this._element._wiyComponent = this;
 
         element.setAttribute('uuid', this._uuid);
         Object.entries(this._config.listeners || {}).forEach(([name, value]) => {
@@ -589,38 +618,29 @@ class Component extends EventTarget {
 
         if (oldElement) {
             root.appendChild(oldElement.shadowRoot);
-            await afterMount();
-            return;
-        }
-
-        root.innerHTML = await loadSourceString(this._config.template) || '';
-
-        const cssCode = await loadSourceString(this._config.style) || '';
-        if (cssCode) {
+        } else {
+            root.innerHTML = await loadSourceString(this._config.template) || '';
             const style = document.createElement('style');
-            style.innerHTML = cssCode;
+            style.innerHTML = await loadSourceString(this._config.style) || '';
             root.prepend(style);
-        }
 
-        await this.renderNodes(root.childNodes);
+            await beforeRender();
+            await this.renderNodes(root.childNodes);
+            await afterRender();
+        }
         await afterMount();
     }
 
     async unmount() {
-        OBSERVER_MANAGER.stop(this);
-
         const oldParent = this._parent;
-        this._parent.removeChild(this);
-
         const oldChildren = new Set(this._children);
-        this._children.forEach(child => {
-            child.unmount();
-        });
-
         const oldElement = this._element;
-        this._element._wiyComponent = undefined;
-        this._element = undefined;
 
+        const beforeUnmount = async () => {
+            const lifecycleFunction = this._config.lifecycle.beforeUnmount;
+            lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)());
+            this.trigger('beforeunmount');
+        };
         const afterUnmount = async () => {
             const data = {
                 parent: oldParent,
@@ -632,6 +652,15 @@ class Component extends EventTarget {
             this.trigger('unmount', data);
         };
 
+        await beforeUnmount();
+        OBSERVER_MANAGER.stop(this);
+
+        this._parent.removeChild(this);
+        this._children.forEach(child => {
+            child.unmount();
+        });
+        this._element._wiyComponent = undefined;
+        this._element = undefined;
         await afterUnmount();
     }
 
