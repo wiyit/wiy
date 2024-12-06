@@ -1287,7 +1287,7 @@ class Router extends EventTarget {
     }
 
     go(path, params = {}) {
-        const url = new URL(this._base + path, location);
+        const url = path ? new URL(this._base + path, location) : new URL(location);
         Object.entries(params).forEach(([name, value]) => {
             url.searchParams.set(name, value);
         });
