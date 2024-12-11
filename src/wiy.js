@@ -171,7 +171,11 @@ class ObserverManager {
 
         const update = async () => {
             while (!this._queue.isEmpty()) {
-                await this._queue.dequeue()();
+                try {
+                    await this._queue.dequeue()();
+                } catch (e) {
+                    console.error(e);
+                }
             }
             window.requestAnimationFrame(update);
         };
