@@ -360,8 +360,8 @@ const unmount = (obj) => {
         unmount(node);
     });
 };
-const replaceWith = (node, obj) => {
-    unmount(node);
+const replaceWith = (node, obj, needUnmount = true) => {
+    needUnmount && unmount(node);
     if (obj instanceof Node) {
         node.replaceWith(obj);
     } else {
@@ -679,10 +679,20 @@ class Component extends EventTarget {
         if (node.hasAttribute('wiy:for')) {
             return await this.renderFor(node, extraContext);
         }
+        if (node.hasAttribute('wiy:slot')) {
+            const slot = await this.renderString(removeAttr(node, 'wiy:slot') || '', extraContext);
+            node._wiySlotInfo = {
+                slot,
+                context: {
+                    ...this._config.context,
+                    ...extraContext,
+                },
+            };
+            return node;
+        }
 
         const listeners = {};
         const dataBinders = {};
-        let slotName;
         for (let attrNode of Array.from(node.attributes)) {//需先转成数组，防止遍历过程中删除属性导致遍历出错
             await this.renderTextOrAttr(attrNode, extraContext);
             const attrName = attrNode.nodeName;
@@ -848,8 +858,6 @@ class Component extends EventTarget {
                             eventHandler,
                         ];
                     }
-                } else if (attrName == 'wiy:slot') {
-                    slotName = attrValue;
                 }
             }
         }
@@ -860,18 +868,7 @@ class Component extends EventTarget {
             if (node.nodeName == 'SLOT') {
                 return await this.renderSlot(node, extraContext);
             } else if (node.nodeName == 'TEMPLATE') {
-                if (!_.isUndefined(slotName)) {
-                    node._wiyTemplate = {
-                        slot: slotName,
-                        context: {
-                            ...this._config.context,
-                            ...extraContext,
-                        },
-                    };
-                    return node;
-                } else {
-                    return await this.renderNodes(node.content.childNodes, extraContext);
-                }
+                return await this.renderNodes(node.content.childNodes, extraContext);
             } else {
                 await this.renderNodes(node.childNodes, extraContext);
                 return node;
@@ -881,15 +878,19 @@ class Component extends EventTarget {
 
     async renderSlot(node, extraContext) {
         const slotName = node.name || '';
-        let slotRenderer = this._config.slotRenderers[slotName];
-        if (!slotRenderer) {
-            slotRenderer = async () => {
-                return await this.renderNodes(node.childNodes, extraContext);
-            };
+        let renderers = this._config.slotRenderers[slotName];
+        if (!renderers) {
+            renderers = [async () => {
+                await this.renderNodes(node.childNodes, extraContext);
+            }];
         }
-        const slotContents = await slotRenderer();
-        replaceWith(node, slotContents);
-        return slotContents;
+        if (!renderers.executed) {
+            for (let renderer of renderers) {
+                await renderer();
+            }
+            renderers.executed = true;
+        }
+        return node;
     }
 
     async renderIf(node, extraContext) {
@@ -1031,48 +1032,56 @@ class Component extends EventTarget {
     async renderNodes(nodes, extraContext) {
         const list = [];
         for (let node of Array.from(nodes)) {
-            let content = node;
-            switch (node.nodeType) {
-                case Node.TEXT_NODE:
-                    content = await this.renderTextOrAttr(node, extraContext);
-                    break;
-                case Node.ELEMENT_NODE:
-                    content = await this.renderElement(node, extraContext);
-                    break;
-            }
-            list.push(content);
+            list.push(await this.renderNode(node, extraContext));
         }
         return list;
     }
 
+    async renderNode(node, extraContext) {
+        switch (node.nodeType) {
+            case Node.TEXT_NODE:
+                return await this.renderTextOrAttr(node, extraContext);
+            case Node.ELEMENT_NODE:
+                return await this.renderElement(node, extraContext);
+            case Node.DOCUMENT_FRAGMENT_NODE:
+                return await this.renderNodes(node.childNodes, extraContext);
+            default:
+                return node;
+        }
+    }
+
     async renderComponent(node, extraContext, listeners, dataBinders) {
         const slotRenderers = {};
-        for (let childNode of Array.from(node.childNodes)) {
-            if (childNode.nodeName == 'TEMPLATE') {
-                childNode.remove();
-                const content = await this.renderElement(childNode, extraContext);
-                const templates = toNodeList(content).filter(node => {
-                    return node.nodeName == 'TEMPLATE';
+        const addRenderer = (slotContentNode, slot = '', context = extraContext) => {
+            slot && slotContentNode.setAttribute('slot', slot);
+            slotRenderers[slot] = slotRenderers[slot] || [];
+            slotRenderers[slot].push(async () => {
+                const slotContent = await this.renderNode(slotContentNode, context);
+                slot && toNodeList(slotContent).filter(n => {
+                    return n.nodeType == Node.ELEMENT_NODE;
+                }).forEach(n => {
+                    n.setAttribute('slot', slot);
                 });
-                templates.forEach(template => {
-                    const {
-                        slot,
-                        context,
-                    } = template._wiyTemplate;
-                    if (template.content.childNodes.length > 0) {
-                        slotRenderers[slot] = async () => {
-                            return await this.renderElement(template.cloneNode(true), context);
-                        };
-                    }
+                replaceWith(slotContentNode, slotContent, false);
+            });
+        };
+
+        for (let childNode of Array.from(node.childNodes)) {
+            if (childNode.nodeType == Node.ELEMENT_NODE && childNode.hasAttribute('wiy:slot')) {
+                const content = await this.renderElement(childNode, extraContext);
+                toNodeList(content).filter(n => {
+                    return n.nodeType == Node.ELEMENT_NODE;
+                }).forEach(slotContentNode => {
+                    const { slot, context, } = slotContentNode._wiySlotInfo;
+                    addRenderer(slotContentNode, slot, context);
                 });
             }
         }
-        if (node.childNodes.length > 0) {
-            const templateFragment = nodesToDocumentFragment(node.childNodes);
-            slotRenderers[''] = async () => {
-                return await this.renderNodes(templateFragment.cloneNode(true).childNodes, extraContext);
-            };
-        }
+        Array.from(node.childNodes).filter(n => {
+            return n.nodeType != Node.ELEMENT_NODE || !n.hasAttribute('slot');
+        }).forEach(slotContentNode => {
+            addRenderer(slotContentNode);
+        });
 
         await new Promise(async (resolve) => {
             const define = await loadComponentDefine(this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]);
