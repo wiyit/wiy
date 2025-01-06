@@ -1062,7 +1062,6 @@ class Component extends EventTarget {
                 }).forEach(n => {
                     n.setAttribute('slot', slot);
                 });
-                replaceWith(slotContentNode, slotContent, false);
             });
         };
 
