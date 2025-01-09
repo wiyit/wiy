@@ -171,15 +171,29 @@ class ObserverManager {
 
         const update = async () => {
             while (!this._queue.isEmpty()) {
+                const observer = this._queue.dequeue();
                 try {
-                    await this._queue.dequeue()();
+                    await observer.process();
                 } catch (e) {
-                    console.error(e);
+                    console.error(e, observer);
                 }
             }
             window.requestAnimationFrame(update);
         };
         window.requestAnimationFrame(update);
+
+        setInterval(() => {
+            console.log(
+                Object.values(this._map).reduce((total, current) => {
+                    total += Object.values(current).reduce((t, c) => {
+                        t += Array.from(c).filter(o => {
+                            return o._component._element;
+                        }).length;
+                        return t;
+                    }, 0);
+                    return total;
+                }, 0));
+        }, 3000);
     }
 
     push(observer) {
@@ -221,20 +235,40 @@ class ObserverManager {
 
         //添加到处理队列中
         observers.forEach(observer => {
-            this._queue.enqueue(async () => {
-                await observer.process();
-            });
+            if (observer.isActive()) {
+                this._queue.enqueue(observer);
+            }
         });
     }
 
-    stop(component) {
+    pause(component) {
         Object.values(this._map).forEach(temp => {
             Object.values(temp).forEach(observers => {
                 observers.forEach(observer => {
                     if (observer.getComponent() == component) {
-                        observers.delete(observer);
+                        observer.pause();
                     }
                 });
+            });
+        });
+    }
+
+    continue(component) {
+        Object.values(this._map).forEach(temp => {
+            Object.values(temp).forEach(observers => {
+                observers.forEach(observer => {
+                    if (observer.getComponent() == component) {
+                        observer.continue();
+                    }
+                });
+            });
+        });
+    }
+
+    delete(observer) {
+        Object.values(this._map).forEach(temp => {
+            Object.values(temp).forEach(observers => {
+                observers.delete(observer);
             });
         });
     }
@@ -254,6 +288,10 @@ class Observer {
             _component: {
                 value: component,
             },
+            _status: {
+                value: 'active',
+                writable: true,
+            },
         });
     }
 
@@ -263,6 +301,18 @@ class Observer {
 
     getComponent() {
         return this._component;
+    }
+
+    pause() {
+        this._status = 'pause';
+    }
+
+    continue() {
+        this._status = 'active';
+    }
+
+    isActive() {
+        return this._status == 'active';
     }
 }
 const isProxyObj = (obj) => {
@@ -436,14 +486,23 @@ class Component extends EventTarget {
             _config: {
                 value: config,
             },
+            _element: {
+                writable: true,
+            },
             _parent: {
                 writable: true,
             },
             _children: {
                 value: new Set(),//需要注意内存泄漏
             },
-            _element: {
+            _oldElement: {
                 writable: true,
+            },
+            _oldParent: {
+                writable: true,
+            },
+            _oldChildren: {
+                value: new Set(),//需要注意内存泄漏
             },
         });
 
@@ -565,36 +624,51 @@ class Component extends EventTarget {
     }
 
     async mount(element) {
-        const oldElement = this._element;
+        if (this._element) {
+            throw new Error(`${this._uuid}已挂载，无法重复挂载`);
+        }
+        if (this._oldElement && this._oldElement != element) {
+            throw new Error(`${this._uuid}无法切换挂载`);
+        }
 
         await this.executeLifecycle('beforeMount', {
-            oldElement,
             element,
         });
+
+        //将element与组件相互关联
         this._element = element;
         this._element._wiyComponent = this;
 
-        element.setAttribute('uuid', this._uuid);
-        Object.entries(this._config.listeners || {}).forEach(([name, value]) => {
-            element.addEventListener(name, value);
-        });
+        if (this._oldElement) {
+            this._oldParent && this._oldParent.addChild(this);//将父子组件相互关联
+            for (let child of this._oldChildren) {//挂载所有子组件
+                await child.mount(child._oldElement);
+            }
 
-        const root = element.attachShadow({ mode: 'open' });
-        Object.defineProperties(root, {//hack，某些三方库在shadow dom中有问题
-            parentNode: {
-                value: element,
-            },
-            scrollLeft: {
-                value: 0,
-            },
-            scrollTop: {
-                value: 0,
-            },
-        });
+            this._oldElement = undefined;
+            this._oldParent = undefined;
+            this._oldChildren.clear();
 
-        if (oldElement) {
-            root.appendChild(oldElement.shadowRoot);
+            OBSERVER_MANAGER.continue(this);//继续观察
         } else {
+            element.setAttribute('uuid', this._uuid);
+            Object.entries(this._config.listeners || {}).forEach(([name, value]) => {
+                element.addEventListener(name, value);
+            });
+
+            const root = element.attachShadow({ mode: 'open' });
+            Object.defineProperties(root, {//hack，某些三方库在shadow dom中有问题
+                parentNode: {
+                    value: element,
+                },
+                scrollLeft: {
+                    value: 0,
+                },
+                scrollTop: {
+                    value: 0,
+                },
+            });
+
             root.innerHTML = await loadSourceString(this._config.template) || '';
             const style = document.createElement('style');
             style.innerHTML = await loadSourceString(this._config.style) || '';
@@ -604,27 +678,36 @@ class Component extends EventTarget {
             await this.renderNodes(root.childNodes);
             await this.executeLifecycle('render');
         }
+
         await this.executeLifecycle('mount');
     }
 
     async unmount() {
-        const oldParent = this._parent;
-        const oldChildren = new Set(this._children);
-        const oldElement = this._element;
+        if (!this._element) {
+            throw new Error(`${this._uuid}未挂载，无法卸载`);
+        }
 
         await this.executeLifecycle('beforeUnmount');
-        OBSERVER_MANAGER.stop(this);
 
-        this._parent.removeChild(this);
-        this._children.forEach(child => {
-            child.unmount();
-        });
+        OBSERVER_MANAGER.pause(this);//暂停观察
+
+        this._oldElement = this._element;
+        this._oldParent = this._parent;
+        for (let child of this._children) {
+            await child.unmount();
+            this._oldChildren.add(child);
+        }
+
+        this._parent && this._parent.removeChild(this);//解除父子组件关联
+
+        //解除element与组件关联
         this._element._wiyComponent = undefined;
         this._element = undefined;
+
         await this.executeLifecycle('unmount', {
-            parent: oldParent,
-            children: oldChildren,
-            element: oldElement,
+            element: this._oldElement,
+            parent: this._oldParent,
+            children: this._oldChildren,
         });
     }
 
@@ -636,10 +719,7 @@ class Component extends EventTarget {
             let needCallback = false;
             OBSERVER_MANAGER.push(observer);
             try {
-                result = func();
-                if (result instanceof Promise) {
-                    result = await result;
-                }
+                result = await func();
                 if (!firstObserve && !_.isObject(result) && oldResult == result) {
                     return;
                 }
@@ -655,9 +735,8 @@ class Component extends EventTarget {
             }
         };
         const observer = new Observer(async () => {
-            if (this._element) {
-                await startObserve();
-            }
+            OBSERVER_MANAGER.delete(observer);
+            await startObserve();
         }, info, this);
         return await startObserve();
     }
@@ -1213,10 +1292,14 @@ class App extends EventTarget {
     async renderPage(info) {
         const currentPage = await new Promise(async (resolve) => {
             const showPage = async (page) => {
+                if (this._currentPage) {
+                    await this._currentPage.unmount();
+                }
+
                 this._config.container.innerHTML = '';
-                const node = document.createElement('wiy-page');
-                this._config.container.appendChild(node);
-                await page.mount(node);
+                const element = page._oldElement || document.createElement('wiy-page');
+                this._config.container.appendChild(element);
+                await page.mount(element);
                 resolve(page);
             };
 
