@@ -192,6 +192,12 @@ class ObserverManager {
                         return t;
                     }, 0);
                     return total;
+                }, 0), Object.values(this._map).reduce((total, current) => {
+                    total += Object.values(current).reduce((t, c) => {
+                        t += c.size;
+                        return t;
+                    }, 0);
+                    return total;
                 }, 0));
         }, 3000);
     }
@@ -245,7 +251,7 @@ class ObserverManager {
         Object.values(this._map).forEach(temp => {
             Object.values(temp).forEach(observers => {
                 observers.forEach(observer => {
-                    if (observer.getComponent() == component) {
+                    if (observer.getComponent()._rawThis == component._rawThis) {
                         observer.pause();
                     }
                 });
@@ -257,8 +263,21 @@ class ObserverManager {
         Object.values(this._map).forEach(temp => {
             Object.values(temp).forEach(observers => {
                 observers.forEach(observer => {
-                    if (observer.getComponent() == component) {
+                    if (observer.getComponent()._rawThis == component._rawThis) {
                         observer.continue();
+                    }
+                });
+            });
+        });
+    }
+
+    stop(component) {
+        Object.values(this._map).forEach(temp => {
+            Object.values(temp).forEach(observers => {
+                observers.forEach(observer => {
+                    if (observer.getComponent()._rawThis == component._rawThis) {
+                        observer.stop();
+                        observers.delete(observer);
                     }
                 });
             });
@@ -286,7 +305,7 @@ class Observer {
                 value: info,
             },
             _component: {
-                value: component,
+                value: component._proxyThis,
             },
             _status: {
                 value: 'active',
@@ -309,6 +328,10 @@ class Observer {
 
     continue() {
         this._status = 'active';
+    }
+
+    stop() {
+        this._status = 'stop';
     }
 
     isActive() {
@@ -611,15 +634,15 @@ class Component extends EventTarget {
         if (oldParent) {
             oldParent.removeChild(component);
         }
-        this._children.add(component._rawThis);
-        component._parent = this;
+        this._children.add(component._proxyThis);
+        component._parent = this._proxyThis;
     }
 
     removeChild(component) {
-        if (!this._children.has(component._rawThis)) {
+        if (!this._children.has(component._proxyThis)) {
             throw new Error(`${component._uuid}不是${this._uuid}的子组件`);
         }
-        this._children.delete(component._rawThis);
+        this._children.delete(component._proxyThis);
         component._parent = undefined;
     }
 
@@ -637,7 +660,7 @@ class Component extends EventTarget {
 
         //将element与组件相互关联
         this._element = element;
-        this._element._wiyComponent = this;
+        this._element._wiyComponent = this._proxyThis;
 
         if (this._oldElement) {
             this._oldParent && this._oldParent.addChild(this);//将父子组件相互关联
@@ -709,6 +732,22 @@ class Component extends EventTarget {
             parent: this._oldParent,
             children: this._oldChildren,
         });
+    }
+
+    async destroy() {
+        if (this._element) {
+            await this.unmount();
+        }
+
+        await this.executeLifecycle('beforeDestroy');
+
+        OBSERVER_MANAGER.stop(this);//停止观察
+
+        for (let child of this._oldChildren) {
+            await child.destroy();
+        }
+
+        await this.executeLifecycle('destroy');
     }
 
     async observe(func, callback, info) {
@@ -1172,7 +1211,7 @@ class Component extends EventTarget {
             const component = new Component({
                 ...define,
                 ...config,
-            });
+            })._proxyThis;
             this.addChild(component);
             component.on('init', async () => {
                 node.style.visibility = 'hidden';
@@ -1315,7 +1354,7 @@ class App extends EventTarget {
                 page = new Page({
                     ...define,
                     app: this,
-                });
+                })._proxyThis;
                 this._pageCache[define._uuid] = page;
                 page.on('init', () => {
                     showPage(page);
@@ -1339,7 +1378,7 @@ class App extends EventTarget {
         return new Component({
             ...define,
             app: this,
-        });
+        })._proxyThis;
     }
 }
 
