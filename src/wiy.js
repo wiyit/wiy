@@ -408,20 +408,20 @@ const OBSERVER_MANAGER = new ObserverManager();
 
 
 
-const unmount = (obj) => {
+const destroy = (obj) => {
     if (obj instanceof Node) {
         switch (obj.nodeType) {
             case Node.DOCUMENT_FRAGMENT_NODE:
                 obj.childNodes.forEach(childNode => {
-                    unmount(childNode);
+                    destroy(childNode);
                 });
                 break;
             case Node.ELEMENT_NODE:
                 obj.childNodes.forEach(childNode => {
-                    unmount(childNode);
+                    destroy(childNode);
                 });
                 if (obj._wiyComponent) {
-                    obj._wiyComponent.unmount();
+                    obj._wiyComponent.destroy();
                 }
                 break;
         }
@@ -430,11 +430,11 @@ const unmount = (obj) => {
 
     const nodeList = toNodeList(obj);
     nodeList.forEach(node => {
-        unmount(node);
+        destroy(node);
     });
 };
-const replaceWith = (node, obj, needUnmount = true) => {
-    needUnmount && unmount(node);
+const replaceWith = (node, obj, needDestroy = true) => {
+    needDestroy && destroy(node);
     if (obj instanceof Node) {
         node.replaceWith(obj);
     } else {
@@ -446,8 +446,8 @@ const insertAfter = (node, obj) => {
     insertNodeAfter(temp, node);
     replaceWith(temp, obj);
 };
-const remove = (obj, needUnmount = true) => {
-    needUnmount && unmount(obj);
+const remove = (obj, needDestroy = true) => {
+    needDestroy && destroy(obj);
     if (obj instanceof Node) {
         obj.remove();
     } else {
