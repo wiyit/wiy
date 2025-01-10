@@ -181,25 +181,6 @@ class ObserverManager {
             window.requestAnimationFrame(update);
         };
         window.requestAnimationFrame(update);
-
-        setInterval(() => {
-            console.log(
-                Object.values(this._map).reduce((total, current) => {
-                    total += Object.values(current).reduce((t, c) => {
-                        t += Array.from(c).filter(o => {
-                            return o._component._element;
-                        }).length;
-                        return t;
-                    }, 0);
-                    return total;
-                }, 0), Object.values(this._map).reduce((total, current) => {
-                    total += Object.values(current).reduce((t, c) => {
-                        t += c.size;
-                        return t;
-                    }, 0);
-                    return total;
-                }, 0));
-        }, 3000);
     }
 
     push(observer) {
@@ -271,12 +252,25 @@ class ObserverManager {
         });
     }
 
-    stop(component) {
+    destroyByComponent(component) {
         Object.values(this._map).forEach(temp => {
             Object.values(temp).forEach(observers => {
                 observers.forEach(observer => {
                     if (observer.getComponent()._rawThis == component._rawThis) {
-                        observer.stop();
+                        observer.destroy();
+                        observers.delete(observer);
+                    }
+                });
+            });
+        });
+    }
+
+    destroyByNode(node) {
+        Object.values(this._map).forEach(temp => {
+            Object.values(temp).forEach(observers => {
+                observers.forEach(observer => {
+                    if (observer.getDestroyWithNode() == node) {
+                        observer.destroy();
                         observers.delete(observer);
                     }
                 });
@@ -293,19 +287,22 @@ class ObserverManager {
     }
 }
 class Observer {
-    constructor(callback, info, component) {
+    constructor(config) {
         Object.defineProperties(this, {
             _uuid: {
                 value: _.uniqueId('observer-'),
             },
             _callback: {
-                value: callback,
+                value: config.callback,
             },
             _info: {
-                value: info,
+                value: config.info,
             },
             _component: {
-                value: component._proxyThis,
+                value: config.component._proxyThis,
+            },
+            _destroyWithNode: {
+                value: config.destroyWithNode,
             },
             _status: {
                 value: 'active',
@@ -322,6 +319,10 @@ class Observer {
         return this._component;
     }
 
+    getDestroyWithNode() {
+        return this._destroyWithNode;
+    }
+
     pause() {
         this._status = 'pause';
     }
@@ -330,8 +331,8 @@ class Observer {
         this._status = 'active';
     }
 
-    stop() {
-        this._status = 'stop';
+    destroy() {
+        this._status = 'destroy';
     }
 
     isActive() {
@@ -425,6 +426,7 @@ const destroy = (obj) => {
                 }
                 break;
         }
+        OBSERVER_MANAGER.destroyByNode(obj);//终止观察
         return;
     }
 
@@ -741,7 +743,7 @@ class Component extends EventTarget {
 
         await this.executeLifecycle('beforeDestroy');
 
-        OBSERVER_MANAGER.stop(this);//停止观察
+        OBSERVER_MANAGER.destroyByComponent(this);//终止观察
 
         for (let child of this._oldChildren) {
             await child.destroy();
@@ -750,7 +752,7 @@ class Component extends EventTarget {
         await this.executeLifecycle('destroy');
     }
 
-    async observe(func, callback, info) {
+    async observe(func, callback, destroyWithNode, info) {
         let firstObserve = true;
         let oldResult;
         const startObserve = async () => {
@@ -773,10 +775,15 @@ class Component extends EventTarget {
                 }
             }
         };
-        const observer = new Observer(async () => {
-            OBSERVER_MANAGER.delete(observer);
-            await startObserve();
-        }, info, this);
+        const observer = new Observer({
+            callback: async () => {
+                OBSERVER_MANAGER.delete(observer);
+                await startObserve();
+            },
+            info,
+            component: this,
+            destroyWithNode,
+        });
         return await startObserve();
     }
 
@@ -786,7 +793,7 @@ class Component extends EventTarget {
             return this.renderString(originNodeValue, extraContext);
         }, (result) => {
             node.nodeValue = result;
-        }, originNodeValue);
+        }, node.ownerElement || node, originNodeValue);
         return node;
     }
 
@@ -838,7 +845,7 @@ class Component extends EventTarget {
                         } else {
                             node.innerHTML = result;
                         }
-                    }, attrValue);
+                    }, node, attrValue);
                 } else if (attrName.startsWith('wiy:attr-')) {
                     let bindAttrName;
                     if (attrName.startsWith('wiy:attr-')) {
@@ -853,7 +860,7 @@ class Component extends EventTarget {
                             } else {
                                 node.setAttribute(bindAttrName, result);
                             }
-                        }, attrValue);
+                        }, node, attrValue);
                     }
                 } else if (attrName.startsWith('wiy:style')) {
                     let bindAttrName;
@@ -880,7 +887,7 @@ class Component extends EventTarget {
                                 node.style[key] = value;
                             });
                         }
-                    }, attrValue);
+                    }, node, attrValue);
                 } else if (attrName.startsWith('wiy:data')) {
                     let bindAttrName;
                     if (attrName.startsWith('wiy:data-')) {
@@ -906,7 +913,7 @@ class Component extends EventTarget {
                                 component.setData(bindAttrName ? {
                                     [bindAttrName]: result,
                                 } : result);
-                            }, attrValue);
+                            }, node, attrValue);
                         };
                     } else {
                         switch (node.nodeName) {
@@ -938,7 +945,7 @@ class Component extends EventTarget {
                                 } else {
                                     node[bindAttrName] = result;
                                 }
-                            }, attrValue);
+                            }, node, attrValue);
                         }
                     }
 
@@ -1034,7 +1041,7 @@ class Component extends EventTarget {
             } else {//不需要渲染
                 list[1] = undefined;
             }
-        }, condition);
+        }, pointer, condition);
 
         return list;
     }
@@ -1134,7 +1141,7 @@ class Component extends EventTarget {
                     data.value = value;
                     data.content = content;
                     oldData = map[key] = data;
-                }, `${forObj}[${key}]`);
+                }, pointer, `${forObj}[${key}]`);
             }
             while (i < list.length - 1) {//后续index上原有的内容需要清除
                 i++;
@@ -1142,7 +1149,7 @@ class Component extends EventTarget {
             }
 
             oldObj = result;
-        }, forObj);
+        }, pointer, forObj);
 
         return list;
     }
