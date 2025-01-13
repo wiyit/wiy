@@ -1297,6 +1297,9 @@ class App extends EventTarget {
         Object.entries(this._config.components).forEach(([name, value]) => {
             this._config.components[name.toUpperCase()] = value;
         });
+        Object.entries(this._config.methods || {}).forEach(([name, value]) => {
+            this.registerMethod(name, value);
+        });
 
         const cssCode = await loadSourceString(this._config.style) || '';
         if (cssCode) {
