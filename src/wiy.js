@@ -1290,6 +1290,10 @@ class App extends EventTarget {
     }
 
     async init() {
+        if (!this._config.index) {
+            throw new Error('未配置index');
+        }
+
         this._config.components = this._config.components || {};
         this._config.lifecycle = this._config.lifecycle || {};
         this._config.container = this._config.container || document.body;
@@ -1339,6 +1343,10 @@ class App extends EventTarget {
     }
 
     async renderPage(info) {
+        if (!(this._config.pages[info.path] || this._config.pages[this._config.index])) {
+            throw new Error(`未找到页面${info.path}`);
+        }
+
         const currentPage = await new Promise(async (resolve) => {
             const showPage = async (page) => {
                 if (this._currentPage) {
