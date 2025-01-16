@@ -841,7 +841,7 @@ class Component extends EventTarget {
                         return this.renderValue(attrValue, extraContext);
                     }, (result) => {
                         if (_.isUndefined(result) || _.isNull(result)) {
-                            delete node.innerHTML;
+                            node.innerHTML = '';
                         } else {
                             node.innerHTML = result;
                         }
