@@ -532,6 +532,7 @@ class Component extends EventTarget {
         });
 
         this.init();
+        return this._proxyThis;
     }
 
     async executeLifecycle(name, data) {
@@ -1218,7 +1219,7 @@ class Component extends EventTarget {
             const component = new Component({
                 ...define,
                 ...config,
-            })._proxyThis;
+            });
             this.addChild(component);
             component.on('init', async () => {
                 node.style.visibility = 'hidden';
@@ -1249,16 +1250,16 @@ class Component extends EventTarget {
     }
 }
 
-class Page extends Component {
-    constructor(config = {}) {
-        super(config);
-    }
-}
-
 class App extends EventTarget {
     constructor(config = {}) {
         super();
         Object.defineProperties(this, {
+            _rawThis: {
+                value: this,
+            },
+            _proxyThis: {
+                value: tryCreateProxy(this),
+            },
             _uuid: {
                 value: _.uniqueId('app-'),
             },
@@ -1275,18 +1276,18 @@ class App extends EventTarget {
             _router: {
                 value: new Router(),
             },
-            _eventBus: {
-                value: new EventBus(),
-            },
-            _storage: {
-                value: new Storage(),
-            },
         });
 
         this.init().then(() => {
             this._router.updateStatus();
-            this.dispatchEvent(new WiyEvent('init'));
         });
+        return this._proxyThis;
+    }
+
+    async executeLifecycle(name, data) {
+        const lifecycleFunction = (this._config.lifecycle || {})[name];
+        lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)(data));
+        this.trigger(name.toLowerCase(), data);
     }
 
     async init() {
@@ -1294,15 +1295,22 @@ class App extends EventTarget {
             throw new Error('未配置index');
         }
 
+        await this.executeLifecycle('beforeInit');
         this._config.components = this._config.components || {};
-        this._config.lifecycle = this._config.lifecycle || {};
         this._config.container = this._config.container || document.body;
 
         Object.entries(this._config.components).forEach(([name, value]) => {
-            this._config.components[name.toUpperCase()] = value;
+            this.registerComponent(name, value);
         });
         Object.entries(this._config.methods || {}).forEach(([name, value]) => {
             this.registerMethod(name, value);
+        });
+        let data = this._config.data;
+        if (_.isFunction(data)) {
+            data = data.bind(this._proxyThis)();
+        }
+        Object.entries(data || {}).forEach(([name, value]) => {
+            this[name] = value;
         });
 
         const cssCode = await loadSourceString(this._config.style) || '';
@@ -1326,20 +1334,19 @@ class App extends EventTarget {
         });
         this._router.updateStatus(false);
 
-        const lifecycleFunction = this._config.lifecycle.init;
-        lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this)());
+        await this.executeLifecycle('init');
     }
 
     getRouter() {
         return this._router;
     }
 
-    getEventBus() {
-        return this._eventBus;
+    on(eventType, listener) {
+        this._rawThis.addEventListener(eventType, listener);
     }
 
-    getStorage() {
-        return this._storage;
+    trigger(eventType, data, cause) {
+        this._rawThis.dispatchEvent(new WiyEvent(eventType, data, cause));
     }
 
     async renderPage(info) {
@@ -1369,10 +1376,7 @@ class App extends EventTarget {
                     showPage(page);
                 }
             } else {
-                page = new Page({
-                    ...define,
-                    app: this,
-                })._proxyThis;
+                page = this.newComponent(define);
                 this._pageCache[define._uuid] = page;
                 page.on('init', () => {
                     showPage(page);
@@ -1388,15 +1392,15 @@ class App extends EventTarget {
 
     registerMethod(name, method) {
         Object.defineProperty(this, name, {
-            value: method.bind(this),
+            value: method.bind(this._proxyThis),
         });
     }
 
     newComponent(define) {
         return new Component({
             ...define,
-            app: this,
-        })._proxyThis;
+            app: this._proxyThis,
+        });
     }
 }
 
@@ -1465,41 +1469,6 @@ class Router extends EventTarget {
 
     forward() {
         history.forward();
-    }
-}
-
-class EventBus extends EventTarget {
-    on(eventType, listener, target = this) {
-        target.addEventListener(eventType, listener);
-    }
-
-    trigger(eventType, data, cause, target = this) {
-        target.dispatchEvent(new WiyEvent(eventType, data, cause));
-    }
-}
-
-class Storage extends EventTarget {
-    constructor(config = {}) {
-        super();
-        Object.defineProperties(this, {
-            _config: {
-                value: config,
-            },
-            _current: {
-                value: tryCreateProxy({}),
-            },
-        });
-
-        this.init().then(() => {
-            this.dispatchEvent(new WiyEvent('init'));
-        });
-    }
-
-    async init() {
-    }
-
-    getCurrent() {
-        return this._current;
     }
 }
 
