@@ -49,10 +49,6 @@ const nodesToDocumentFragment = (nodes) => {
         return fragment;
     }, document.createDocumentFragment());
 };
-const replaceNodes = (oldNodes, newNodes) => {
-    nodesToDocumentFragment(oldNodes.slice(1));
-    oldNodes[0].replaceWith(nodesToDocumentFragment(newNodes));
-};
 const removeNodesSet = (set) => {
     set.forEach(item => {
         if (item instanceof Node) {
@@ -1322,7 +1318,7 @@ class App extends EventTarget {
 
         for (let plugin of (this._config.plugins || [])) {
             const define = await loadPluginDefine(plugin);
-            await define.install(this);
+            await define.install(this._proxyThis);
         }
 
         this._router.addEventListener('change', e => {
