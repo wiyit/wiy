@@ -1262,9 +1262,6 @@ class App extends EventTarget {
             _config: {
                 value: config,
             },
-            _pageCache: {
-                value: {},
-            },
             _currentPage: {
                 value: undefined,
                 writable: true,
@@ -1353,7 +1350,7 @@ class App extends EventTarget {
         const currentPage = await new Promise(async (resolve) => {
             const showPage = async (page) => {
                 if (this._currentPage) {
-                    await this._currentPage.unmount();
+                    await this._currentPage.destroy();
                 }
 
                 this._config.container.innerHTML = '';
@@ -1364,16 +1361,10 @@ class App extends EventTarget {
             };
 
             const define = await loadComponentDefine(this._config.pages[info.path] || this._config.pages[this._config.index]);
-            let page = this._pageCache[define._uuid];
-            if (page) {
-                if (page == this._currentPage) {
-                    resolve(page);
-                } else {
-                    showPage(page);
-                }
+            if (define._uuid == this._currentPage?._config._uuid) {
+                resolve(this._currentPage);
             } else {
-                page = this.newComponent(define);
-                this._pageCache[define._uuid] = page;
+                const page = this.newComponent(define);
                 page.on('init', () => {
                     showPage(page);
                 });
