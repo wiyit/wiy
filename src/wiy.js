@@ -90,6 +90,9 @@ class Queue {
     constructor() {
         Object.defineProperties(this, {
             _items: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: [],
             },
         });
@@ -119,6 +122,9 @@ class Stack {
     constructor() {
         Object.defineProperties(this, {
             _items: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: [],
             },
         });
@@ -152,26 +158,38 @@ class ObserverManager {
     constructor() {
         Object.defineProperties(this, {
             _map: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: {},
             },
             _queue: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: new Queue(),
             },
             _stack: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: new Stack(),
             },
             _symbolForTargetSelf: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: Symbol(),
             },
         });
 
         const update = async () => {
             while (!this._queue.isEmpty()) {
-                const observer = this._queue.dequeue();
+                const item = this._queue.dequeue();
                 try {
-                    await observer.process();
+                    await item.observer.process(item.notifier);
                 } catch (e) {
-                    console.error(e, observer);
+                    console.error(e, item);
                 }
             }
             window.requestAnimationFrame(update);
@@ -219,7 +237,14 @@ class ObserverManager {
         //添加到处理队列中
         observers.forEach(observer => {
             if (observer.isActive()) {
-                this._queue.enqueue(observer);
+                this._queue.enqueue({
+                    observer,
+                    notifier: {
+                        target,
+                        prop,
+                        propsChanged,
+                    },
+                });
             }
         });
     }
@@ -286,29 +311,46 @@ class Observer {
     constructor(config) {
         Object.defineProperties(this, {
             _uuid: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: _.uniqueId('observer-'),
             },
             _callback: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: config.callback,
             },
             _info: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: config.info,
             },
             _component: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: config.component._proxyThis,
             },
             _destroyWithNode: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: config.destroyWithNode,
             },
             _status: {
-                value: 'active',
                 writable: true,
+                configurable: false,
+                enumerable: false,
+                value: 'active',
             },
         });
     }
 
-    async process() {
-        await this._callback();
+    async process(notifier) {
+        await this._callback(notifier);
     }
 
     getComponent() {
@@ -342,11 +384,6 @@ const tryCreateProxy = (obj) => {
     if (!_.isObject(obj) || isProxyObj(obj) || obj instanceof Date || obj instanceof Node) {
         return obj;
     }
-    Object.defineProperties(obj, {
-        _proxyUuid: {
-            value: _.uniqueId('proxy-'),
-        },
-    });
     const proxyObj = new Proxy(obj, {
         has(target, prop) {
             const has = Reflect.has(target, prop);
@@ -397,6 +434,26 @@ const tryCreateProxy = (obj) => {
             const result = Reflect.defineProperty(target, prop, attributes);
             OBSERVER_MANAGER.notify(target, prop, true);
             return result;
+        },
+    });
+    Object.defineProperties(obj, {
+        _proxyUuid: {
+            writable: false,
+            configurable: false,
+            enumerable: false,
+            value: _.uniqueId('proxy-'),
+        },
+        _rawThis: {
+            writable: false,
+            configurable: false,
+            enumerable: false,
+            value: obj,
+        },
+        _proxyThis: {
+            writable: false,
+            configurable: false,
+            enumerable: false,
+            value: proxyObj,
         },
     });
     return proxyObj;
@@ -495,40 +552,55 @@ class Component extends EventTarget {
     constructor(config = {}) {
         super();
         Object.defineProperties(this, {
-            _rawThis: {
-                value: this,
-            },
-            _proxyThis: {
-                value: tryCreateProxy(this),
-            },
             _uuid: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: _.uniqueId('component-'),
             },
             _config: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: config,
             },
             _element: {
                 writable: true,
+                configurable: false,
+                enumerable: false,
             },
             _parent: {
                 writable: true,
+                configurable: false,
+                enumerable: false,
             },
             _children: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: new Set(),//需要注意内存泄漏
             },
             _oldElement: {
                 writable: true,
+                configurable: false,
+                enumerable: false,
             },
             _oldParent: {
                 writable: true,
+                configurable: false,
+                enumerable: false,
             },
             _oldChildren: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: new Set(),//需要注意内存泄漏
             },
         });
 
-        this.init();
-        return this._proxyThis;
+        const proxy = tryCreateProxy(this);
+        proxy.init();
+        return proxy;
     }
 
     async executeLifecycle(name, data) {
@@ -549,6 +621,9 @@ class Component extends EventTarget {
         });
         Object.entries(this._config.methods || {}).forEach(([name, value]) => {
             Object.defineProperty(this, name, {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: value.bind(this._proxyThis),
             });
         });
@@ -645,6 +720,10 @@ class Component extends EventTarget {
         component._parent = undefined;
     }
 
+    raw(obj) {
+        return obj._rawThis || obj;
+    }
+
     async mount(element) {
         if (this._element) {
             throw new Error(`${this._uuid}已挂载，无法重复挂载`);
@@ -681,12 +760,21 @@ class Component extends EventTarget {
             const root = element.attachShadow({ mode: 'open' });
             Object.defineProperties(root, {//hack，某些三方库在shadow dom中有问题
                 parentNode: {
+                    writable: false,
+                    configurable: false,
+                    enumerable: false,
                     value: element,
                 },
                 scrollLeft: {
+                    writable: false,
+                    configurable: false,
+                    enumerable: false,
                     value: 0,
                 },
                 scrollTop: {
+                    writable: false,
+                    configurable: false,
+                    enumerable: false,
                     value: 0,
                 },
             });
@@ -752,7 +840,7 @@ class Component extends EventTarget {
     async observe(func, callback, destroyWithNode, info) {
         let firstObserve = true;
         let oldResult;
-        const startObserve = async () => {
+        const startObserve = async (notifier) => {
             let result;
             let needCallback = false;
             OBSERVER_MANAGER.push(observer);
@@ -765,7 +853,7 @@ class Component extends EventTarget {
             } finally {
                 OBSERVER_MANAGER.pop();
                 if (needCallback) {
-                    const callbackResult = await callback(result, firstObserve);
+                    const callbackResult = await callback(result, firstObserve, notifier);
                     firstObserve = false;
                     oldResult = result;
                     return callbackResult;
@@ -773,9 +861,9 @@ class Component extends EventTarget {
             }
         };
         const observer = new Observer({
-            callback: async () => {
+            callback: async (notifier) => {
                 OBSERVER_MANAGER.delete(observer);
-                await startObserve();
+                await startObserve(notifier);
             },
             info,
             component: this,
@@ -1250,31 +1338,37 @@ class App extends EventTarget {
     constructor(config = {}) {
         super();
         Object.defineProperties(this, {
-            _rawThis: {
-                value: this,
-            },
-            _proxyThis: {
-                value: tryCreateProxy(this),
-            },
             _uuid: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: _.uniqueId('app-'),
             },
             _config: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: config,
             },
             _currentPage: {
-                value: undefined,
                 writable: true,
+                configurable: false,
+                enumerable: false,
+                value: undefined,
             },
             _router: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: new Router(),
             },
         });
 
-        this.init().then(() => {
-            this._router.updateStatus();
+        const proxy = tryCreateProxy(this);
+        proxy.init().then(() => {
+            proxy._router.updateStatus();
         });
-        return this._proxyThis;
+        return proxy;
     }
 
     async executeLifecycle(name, data) {
@@ -1379,6 +1473,9 @@ class App extends EventTarget {
 
     registerMethod(name, method) {
         Object.defineProperty(this, name, {
+            writable: false,
+            configurable: false,
+            enumerable: false,
             value: method.bind(this._proxyThis),
         });
     }
@@ -1396,12 +1493,21 @@ class Router extends EventTarget {
         super();
         Object.defineProperties(this, {
             _config: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: config,
             },
             _base: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: wiyEnv.publicPath,
             },
             _current: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
                 value: tryCreateProxy({}),
             },
         });
