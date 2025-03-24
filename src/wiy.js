@@ -1416,7 +1416,7 @@ class App extends EventTarget {
             if (e.data.path) {
                 this.renderPage(e.data);
             } else {
-                this._router.go(this._config.index);
+                this._router.replace(this._config.index, e.data.params);
             }
         });
         this._router.updateStatus(false);
@@ -1540,11 +1540,25 @@ class Router extends EventTarget {
         change && this.dispatchEvent(new WiyEvent('change', this._current, cause));
     }
 
+    getBase() {
+        return this._base;
+    }
+
     getCurrent() {
         return this._current;
     }
 
-    go(path, params = {}, clearOldParams = true) {
+    isInternalLink(link) {
+        return !_.isUndefined(this.toRelativePath(link));
+    }
+
+    toRelativePath(link) {
+        const href = new URL(link, location).href;
+        const baseHref = new URL(this._base, location).href;
+        return href.startsWith(baseHref) ? href.slice(baseHref.length) : undefined;
+    }
+
+    toUrl(path, params = {}, clearOldParams = true) {
         const url = path ? new URL(this._base + path, location) : new URL(location);
         if (clearOldParams) {
             url.search = '';
@@ -1552,7 +1566,16 @@ class Router extends EventTarget {
         Object.entries(params).forEach(([name, value]) => {
             url.searchParams.set(name, value);
         });
-        history.pushState(null, null, url);
+        return url;
+    }
+
+    go(path, params = {}, clearOldParams = true) {
+        history.pushState(null, null, this.toUrl(path, params, clearOldParams));
+        this.updateStatus();
+    }
+
+    replace(path, params = {}) {
+        history.replaceState(null, null, this.toUrl(path, params));
         this.updateStatus();
     }
 
