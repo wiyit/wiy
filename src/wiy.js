@@ -662,11 +662,11 @@ class Component extends EventTarget {
     }
 
     attr(name) {
-        return this._element.getAttribute(name);
+        return this._element?.getAttribute(name);
     }
 
     hasAttr(name) {
-        return this._element.hasAttribute(name);
+        return this._element?.hasAttribute(name);
     }
 
     hasSlotTemplate(name = '') {
@@ -691,7 +691,7 @@ class Component extends EventTarget {
         if (!id) {
             return this._element;
         }
-        return this._element.shadowRoot.getElementById(id);
+        return this._element?.shadowRoot.getElementById(id);
     }
 
     getComponent(id) {
