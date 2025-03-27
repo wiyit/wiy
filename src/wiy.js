@@ -1574,8 +1574,8 @@ class Router extends EventTarget {
         this.updateStatus();
     }
 
-    replace(path, params = {}) {
-        history.replaceState(null, null, this.toUrl(path, params));
+    replace(path, params = {}, clearOldParams = true) {
+        history.replaceState(null, null, this.toUrl(path, params, clearOldParams));
         this.updateStatus();
     }
 
