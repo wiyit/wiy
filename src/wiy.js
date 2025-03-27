@@ -1570,12 +1570,20 @@ class Router extends EventTarget {
     }
 
     go(path, params = {}, clearOldParams = true) {
-        history.pushState(null, null, this.toUrl(path, params, clearOldParams));
+        const newUrl = this.toUrl(path, params, clearOldParams);
+        if (newUrl.href == location.href) {
+            return;
+        }
+        history.pushState(null, null, newUrl);
         this.updateStatus();
     }
 
     replace(path, params = {}, clearOldParams = true) {
-        history.replaceState(null, null, this.toUrl(path, params, clearOldParams));
+        const newUrl = this.toUrl(path, params, clearOldParams);
+        if (newUrl.href == location.href) {
+            return;
+        }
+        history.replaceState(null, null, newUrl);
         this.updateStatus();
     }
 
