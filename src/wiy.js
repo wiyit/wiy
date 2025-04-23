@@ -721,7 +721,7 @@ class Component extends EventTarget {
     }
 
     raw(obj) {
-        return obj._rawThis || obj;
+        return tryCreateProxy(obj)._rawThis || obj;
     }
 
     async mount(element) {
