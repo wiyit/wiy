@@ -6,7 +6,7 @@ const removeAttrNode = (element, name) => {
 };
 const removeAttr = (element, name) => {
     const attrNode = removeAttrNode(element, name);
-    return attrNode && attrNode.nodeValue;
+    return attrNode?.nodeValue;
 };
 const SafeRenderer = {
     forHtml: (templateData, ...values) => {
@@ -161,7 +161,7 @@ class ObserverManager {
                 writable: false,
                 configurable: false,
                 enumerable: false,
-                value: {},
+                value: new Map(),//需要注意内存泄漏
             },
             _queue: {
                 writable: false,
@@ -213,29 +213,34 @@ class ObserverManager {
         if (this._stack.isEmpty()) {
             return;
         }
-        const temp = this._map[target._proxyUuid] = this._map[target._proxyUuid] || {};
-        const observers = temp[prop] = temp[prop] || new Set();//需要注意内存泄漏
+        const temp = this._map.get(target) || new Map();//需要注意内存泄漏
+        this._map.set(target, temp);
+        const observers = temp.get(prop) || new Set();//需要注意内存泄漏
+        temp.set(prop, observers);
         this._stack.forEach(observer => {
             observers.add(observer);
         });
     }
 
     notify(target, prop, propsChanged) {
-        const temp = this._map[target._proxyUuid] || {};
+        const temp = this._map.get(target);
+        if (!temp) {
+            return;
+        }
         const observers = new Set();
         //该属性的观察者
-        temp[prop] && temp[prop].forEach(observer => {
+        temp.get(prop)?.forEach(observer => {
             observers.add(observer);
         });
-        if (propsChanged) {
-            //该属性所属对象本身的观察者
-            temp[this._symbolForTargetSelf] && temp[this._symbolForTargetSelf].forEach(observer => {
-                observers.add(observer);
-            });
-        }
+        //该属性所属对象本身的观察者
+        propsChanged && temp.get(this._symbolForTargetSelf)?.forEach(observer => {
+            observers.add(observer);
+        });
 
         //添加到处理队列中
-        observers.forEach(observer => {
+        Array.from(observers).sort((a, b) => {
+            return a._uuid - b._uuid;
+        }).forEach(observer => {
             if (observer.isActive()) {
                 this._queue.enqueue({
                     observer,
@@ -250,8 +255,8 @@ class ObserverManager {
     }
 
     pause(component) {
-        Object.values(this._map).forEach(temp => {
-            Object.values(temp).forEach(observers => {
+        this._map.forEach((temp, target) => {
+            temp.forEach((observers, prop) => {
                 observers.forEach(observer => {
                     if (observer.getComponent()._rawThis == component._rawThis) {
                         observer.pause();
@@ -262,8 +267,8 @@ class ObserverManager {
     }
 
     continue(component) {
-        Object.values(this._map).forEach(temp => {
-            Object.values(temp).forEach(observers => {
+        this._map.forEach((temp, target) => {
+            temp.forEach((observers, prop) => {
                 observers.forEach(observer => {
                     if (observer.getComponent()._rawThis == component._rawThis) {
                         observer.continue();
@@ -274,8 +279,8 @@ class ObserverManager {
     }
 
     destroyByComponent(component) {
-        Object.values(this._map).forEach(temp => {
-            Object.values(temp).forEach(observers => {
+        this._map.forEach((temp, target) => {
+            temp.forEach((observers, prop) => {
                 observers.forEach(observer => {
                     if (observer.getComponent()._rawThis == component._rawThis) {
                         observer.destroy();
@@ -287,8 +292,8 @@ class ObserverManager {
     }
 
     destroyByNode(node) {
-        Object.values(this._map).forEach(temp => {
-            Object.values(temp).forEach(observers => {
+        this._map.forEach((temp, target) => {
+            temp.forEach((observers, prop) => {
                 observers.forEach(observer => {
                     if (observer.getDestroyWithNode() == node) {
                         observer.destroy();
@@ -300,8 +305,8 @@ class ObserverManager {
     }
 
     delete(observer) {
-        Object.values(this._map).forEach(temp => {
-            Object.values(temp).forEach(observers => {
+        this._map.forEach((temp, target) => {
+            temp.forEach((observers, prop) => {
                 observers.delete(observer);
             });
         });
@@ -314,7 +319,7 @@ class Observer {
                 writable: false,
                 configurable: false,
                 enumerable: false,
-                value: _.uniqueId('observer-'),
+                value: parseInt(_.uniqueId()),
             },
             _callback: {
                 writable: false,
@@ -388,7 +393,7 @@ const tryCreateProxy = (obj) => {
         has(target, prop) {
             const has = Reflect.has(target, prop);
             const propDesc = Reflect.getOwnPropertyDescriptor(target, prop);
-            if (!has || (propDesc && propDesc.writable)) {
+            if (!has || propDesc?.writable) {
                 OBSERVER_MANAGER.observe(target, prop);
             }
             return has;
@@ -397,7 +402,7 @@ const tryCreateProxy = (obj) => {
             const has = Reflect.has(target, prop);
             let value = Reflect.get(target, prop);
             const propDesc = Reflect.getOwnPropertyDescriptor(target, prop);
-            if (!has || (propDesc && propDesc.writable)) {
+            if (!has || propDesc?.writable) {
                 value = tryCreateProxy(value);
                 if (isProxyObj(value)) {
                     Reflect.set(target, prop, value);
@@ -415,7 +420,7 @@ const tryCreateProxy = (obj) => {
             const propsChanged = !Reflect.has(target, prop);
             const oldValue = Reflect.get(target, prop);
             const propDesc = Reflect.getOwnPropertyDescriptor(target, prop);
-            if (propDesc && propDesc.writable) {
+            if (propDesc?.writable) {
                 value = tryCreateProxy(value);
             }
             const result = Reflect.set(target, prop, value);
@@ -462,21 +467,19 @@ const OBSERVER_MANAGER = new ObserverManager();
 
 
 
-const destroy = (obj) => {
+const destroy = async (obj) => {
     if (obj instanceof Node) {
         switch (obj.nodeType) {
             case Node.DOCUMENT_FRAGMENT_NODE:
-                obj.childNodes.forEach(childNode => {
-                    destroy(childNode);
-                });
+                for (let childNode of obj.childNodes) {
+                    await destroy(childNode);
+                }
                 break;
             case Node.ELEMENT_NODE:
-                obj.childNodes.forEach(childNode => {
-                    destroy(childNode);
-                });
-                if (obj._wiyComponent) {
-                    obj._wiyComponent.destroy();
+                for (let childNode of obj.childNodes) {
+                    await destroy(childNode);
                 }
+                await obj._wiyComponent?.destroy();
                 break;
         }
         OBSERVER_MANAGER.destroyByNode(obj);//终止观察
@@ -484,25 +487,25 @@ const destroy = (obj) => {
     }
 
     const nodeList = toNodeList(obj);
-    nodeList.forEach(node => {
-        destroy(node);
-    });
+    for (let node of nodeList) {
+        await destroy(node);
+    }
 };
-const replaceWith = (node, obj, needDestroy = true) => {
-    needDestroy && destroy(node);
+const replaceWith = async (node, obj, needDestroy = true) => {
+    needDestroy && await destroy(node);
     if (obj instanceof Node) {
         node.replaceWith(obj);
     } else {
         node.replaceWith(nodesToDocumentFragment(toNodeList(obj)));
     }
 };
-const insertAfter = (node, obj) => {
+const insertAfter = async (node, obj) => {
     const temp = document.createComment('');
     insertNodeAfter(temp, node);
-    replaceWith(temp, obj);
+    await replaceWith(temp, obj);
 };
-const remove = (obj, needDestroy = true) => {
-    needDestroy && destroy(obj);
+const remove = async (obj, needDestroy = true) => {
+    needDestroy && await destroy(obj);
     if (obj instanceof Node) {
         obj.remove();
     } else {
@@ -556,7 +559,7 @@ class Component extends EventTarget {
                 writable: false,
                 configurable: false,
                 enumerable: false,
-                value: _.uniqueId('component-'),
+                value: parseInt(_.uniqueId()),
             },
             _config: {
                 writable: false,
@@ -741,7 +744,7 @@ class Component extends EventTarget {
         this._element._wiyComponent = this._proxyThis;
 
         if (this._oldElement) {
-            this._oldParent && this._oldParent.addChild(this);//将父子组件相互关联
+            this._oldParent?.addChild(this);//将父子组件相互关联
             for (let child of this._oldChildren) {//挂载所有子组件
                 await child.mount(child._oldElement);
             }
@@ -808,7 +811,7 @@ class Component extends EventTarget {
             this._oldChildren.add(child);
         }
 
-        this._parent && this._parent.removeChild(this);//解除父子组件关联
+        this._parent?.removeChild(this);//解除父子组件关联
 
         //解除element与组件关联
         this._element._wiyComponent = undefined;
@@ -1116,12 +1119,12 @@ class Component extends EventTarget {
             return !!this.renderValue(condition, extraContext);
         }, async (result) => {
             if (list[1]) {//在if块中
-                remove(list[1]);//移除旧内容
+                await remove(list[1]);//移除旧内容
             }
 
             if (result) {//需要渲染
                 const content = await this.renderElement(node.cloneNode(true), extraContext);
-                insertAfter(pointer, content);
+                await insertAfter(pointer, content);
                 list[1] = content;
             } else {//不需要渲染
                 list[1] = undefined;
@@ -1142,14 +1145,14 @@ class Component extends EventTarget {
         node.replaceWith(pointer);
         list.push(pointer);
 
-        const adjustContent = (oldContent, newContent, index) => {
+        const adjustContent = async (oldContent, newContent, index) => {
             const oldIndex = list.indexOf(oldContent);
             if (oldIndex == index && oldContent == newContent) {//位置没变，内容没变
                 return;
             }
 
             if (oldContent && oldIndex >= 0) {//在for块中
-                remove(oldContent, oldContent != newContent);
+                await remove(oldContent, oldContent != newContent);
                 list[oldIndex] = undefined;
             }
 
@@ -1162,7 +1165,7 @@ class Component extends EventTarget {
                         for (let i = nodeList.length - 1; i >= 0; i--) {//找到最后一个在dom中的节点
                             const node = nodeList[i];
                             if (node.parentNode == pointer.parentNode || node.isConnected) {//节点没有被移除
-                                insertAfter(node, newContent);
+                                await insertAfter(node, newContent);
                                 list[index] = newContent;
                                 return;
                             }
@@ -1197,7 +1200,7 @@ class Component extends EventTarget {
                 let oldData = map[key];
                 if (oldData && (result == oldObj || value == oldData.value)) {//有之前渲染好的内容
                     const oldContent = oldData.content;
-                    adjustContent(oldContent, oldContent, index);//只需要调节内容位置
+                    await adjustContent(oldContent, oldContent, index);//只需要调节内容位置
                     continue;
                 }
 
@@ -1207,7 +1210,7 @@ class Component extends EventTarget {
                     const oldContent = oldData ? oldData.content : undefined;
 
                     if (!(key in result)) {//key被移除
-                        adjustContent(oldContent);//清除内容
+                        await adjustContent(oldContent);//清除内容
                         return;
                     }
 
@@ -1220,7 +1223,7 @@ class Component extends EventTarget {
                         [keyName]: key,
                         [valueName]: value,
                     });
-                    adjustContent(oldContent, content, index);//更新内容
+                    await adjustContent(oldContent, content, index);//更新内容
 
                     const data = oldData || {};
                     data.value = value;
@@ -1230,7 +1233,7 @@ class Component extends EventTarget {
             }
             while (i < list.length - 1) {//后续index上原有的内容需要清除
                 i++;
-                adjustContent(list[i]);//清除内容
+                await adjustContent(list[i]);//清除内容
             }
 
             oldObj = result;
@@ -1342,7 +1345,7 @@ class App extends EventTarget {
                 writable: false,
                 configurable: false,
                 enumerable: false,
-                value: _.uniqueId('app-'),
+                value: parseInt(_.uniqueId()),
             },
             _config: {
                 writable: false,
