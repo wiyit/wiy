@@ -186,6 +186,9 @@ class ObserverManager {
         const update = async () => {
             while (!this._queue.isEmpty()) {
                 const item = this._queue.dequeue();
+                if (!item.observer.isActive()) {
+                    continue;
+                }
                 try {
                     await item.observer.process(item.notifier);
                 } catch (e) {
