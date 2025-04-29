@@ -1,12 +1,11 @@
 import _ from 'lodash';
 
-const removeAttrNode = (element, name) => {
-    const attrNode = element.getAttributeNode(name);
-    return attrNode && element.removeAttributeNode(attrNode);
-};
 const removeAttr = (element, name) => {
-    const attrNode = removeAttrNode(element, name);
-    return attrNode?.nodeValue;
+    const attrNode = element.getAttributeNode(name);
+    if (attrNode) {
+        element.removeAttributeNode(attrNode);
+        return attrNode.nodeValue;
+    }
 };
 const SafeRenderer = {
     forHtml: (templateData, ...values) => {
@@ -23,20 +22,22 @@ const SafeRenderer = {
         return result;
     }
 };
-const renderHtmlInScope = (templateString, context) => {
-    return renderValueInScope(`(${SafeRenderer.forHtml})\`${templateString}\``, context);
+const renderHtmlInScope = (templateString, contexts = []) => {
+    return renderValueInScope(`(${SafeRenderer.forHtml})\`${templateString}\``, contexts);
 };
-const renderValueInScope = (expression, context = {}) => {
+const renderValueInScope = (expression, contexts = []) => {
     const paramNames = [];
     const paramValues = [];
     let thisObj;
-    Object.entries(context).forEach(([name, value]) => {
-        if (name == 'this') {
-            thisObj = value;
-        } else {
-            paramNames.push(name);
-            paramValues.push(value);
-        }
+    contexts.forEach(context => {
+        Object.entries(context).forEach(([name, value]) => {
+            if (name == 'this') {
+                thisObj = value;
+            } else {
+                paramNames.push(name);
+                paramValues.push(value);
+            }
+        });
     });
     const renderFunction = new Function(paramNames, `
 		return ${expression};
@@ -48,15 +49,6 @@ const nodesToDocumentFragment = (nodes) => {
         fragment.appendChild(node);
         return fragment;
     }, document.createDocumentFragment());
-};
-const removeNodesSet = (set) => {
-    set.forEach(item => {
-        if (item instanceof Node) {
-            item.remove();
-        } else {
-            removeNodesSet(item);
-        }
-    });
 };
 const insertNodeBefore = (nodeToInsert, node) => {
     node.parentNode.insertBefore(nodeToInsert, node);
@@ -449,7 +441,7 @@ const tryCreateProxy = (obj) => {
             writable: false,
             configurable: false,
             enumerable: false,
-            value: _.uniqueId('proxy-'),
+            value: parseInt(_.uniqueId()),
         },
         _rawThis: {
             writable: false,
@@ -617,9 +609,6 @@ class Component extends EventTarget {
 
     async init() {
         await this.executeLifecycle('beforeInit');
-        this._config.context = {
-            this: this._proxyThis,
-        };
         this._config.components = this._config.components || {};
 
         Object.entries(this._config.components).forEach(([name, value]) => {
@@ -727,7 +716,11 @@ class Component extends EventTarget {
     }
 
     raw(obj) {
-        return tryCreateProxy(obj)._rawThis || obj;
+        return tryCreateProxy(obj)?._rawThis || obj;
+    }
+
+    proxy(obj) {
+        return tryCreateProxy(obj)?._proxyThis || obj;
     }
 
     async mount(element) {
@@ -878,31 +871,37 @@ class Component extends EventTarget {
         return await startObserve();
     }
 
-    async renderTextOrAttr(node, extraContext) {
+    async renderTextOrAttr(node, extraContexts = []) {
         const originNodeValue = node.nodeValue;
         await this.observe(() => {
-            return this.renderString(originNodeValue, extraContext);
+            return this.renderString(originNodeValue, extraContexts);
         }, (result) => {
             node.nodeValue = result;
         }, node.ownerElement || node, originNodeValue);
         return node;
     }
 
-    async renderElement(node, extraContext) {
+    async renderElement(node, extraContexts = []) {
+        const letAttrNode = Array.from(node.attributes).find((attrNode) => {
+            return attrNode.nodeName.startsWith('wiy:let-');
+        });
+        if (letAttrNode) {
+            return await this.renderLet(node, extraContexts, letAttrNode.nodeName.slice(8));
+        }
         if (node.hasAttribute('wiy:if')) {
-            return await this.renderIf(node, extraContext);
+            return await this.renderIf(node, extraContexts);
         }
         if (node.hasAttribute('wiy:for')) {
-            return await this.renderFor(node, extraContext);
+            return await this.renderFor(node, extraContexts);
         }
         if (node.hasAttribute('wiy:slot')) {
-            const slot = await this.renderString(removeAttr(node, 'wiy:slot') || '', extraContext);
+            const slot = await this.renderString(removeAttr(node, 'wiy:slot') || '', extraContexts);
             node._wiySlotInfo = {
                 slot,
-                context: {
-                    ...this._config.context,
-                    ...extraContext,
-                },
+                contexts: [
+                    { this: this._proxyThis },
+                    ...extraContexts,
+                ],
             };
             return node;
         }
@@ -910,14 +909,14 @@ class Component extends EventTarget {
         const listeners = {};
         const dataBinders = {};
         for (let attrNode of Array.from(node.attributes)) {//需先转成数组，防止遍历过程中删除属性导致遍历出错
-            await this.renderTextOrAttr(attrNode, extraContext);
+            await this.renderTextOrAttr(attrNode, extraContexts);
             const attrName = attrNode.nodeName;
             if (attrName.startsWith('wiy:')) {
                 const attrValue = removeAttr(node, attrName);
                 if (attrName.startsWith('wiy:on')) {
                     const eventType = attrName.slice(6);
                     const eventHandler = (e) => {
-                        const handler = this.renderValue(attrValue, extraContext);
+                        const handler = this.renderValue(attrValue, extraContexts);
                         if (_.isFunction(handler)) {
                             handler(e);
                         }
@@ -929,7 +928,7 @@ class Component extends EventTarget {
                     ];
                 } else if (attrName == 'wiy:html') {
                     await this.observe(() => {
-                        return this.renderValue(attrValue, extraContext);
+                        return this.renderValue(attrValue, extraContexts);
                     }, (result) => {
                         if (_.isUndefined(result) || _.isNull(result)) {
                             node.innerHTML = '';
@@ -944,7 +943,7 @@ class Component extends EventTarget {
                     }
                     if (bindAttrName) {
                         await this.observe(() => {
-                            return this.renderValue(attrValue, extraContext);
+                            return this.renderValue(attrValue, extraContexts);
                         }, (result) => {
                             if (_.isUndefined(result) || _.isNull(result)) {
                                 node.removeAttribute(bindAttrName);
@@ -962,7 +961,7 @@ class Component extends EventTarget {
                     }
 
                     await this.observe(() => {
-                        const result = this.renderValue(attrValue, extraContext);
+                        const result = this.renderValue(attrValue, extraContexts);
                         if (!bindAttrName && _.isObject(result)) {//未绑定具体属性时，实际则需要观察对象中的所有属性的变化
                             if (!isProxyObj(result)) {
                                 console.warn(`${attrValue}的值不是响应式对象，可能无法观察其属性变化`);
@@ -992,7 +991,7 @@ class Component extends EventTarget {
                         eventType = 'change';
                         dataBinders[bindAttrName || ''] = async (component) => {
                             await this.observe(() => {
-                                const result = this.renderValue(attrValue, extraContext);
+                                const result = this.renderValue(attrValue, extraContexts);
                                 if (!bindAttrName && _.isObject(result)) {//未绑定具体属性时，实际则需要观察对象中的所有属性的变化
                                     if (!isProxyObj(result)) {
                                         console.warn(`${attrValue}的值不是响应式对象，可能无法观察其属性变化`);
@@ -1029,7 +1028,7 @@ class Component extends EventTarget {
                         }
                         if (bindAttrName) {
                             await this.observe(() => {
-                                return this.renderValue(attrValue, extraContext);
+                                return this.renderValue(attrValue, extraContexts);
                             }, (result) => {
                                 if (_.isUndefined(result) || _.isNull(result)) {
                                     delete node[bindAttrName];
@@ -1050,17 +1049,17 @@ class Component extends EventTarget {
                             }
                             if (bindAttrName) {
                                 if (bindAttrName in newData) {
-                                    this.renderValue(`${attrValue}=__newValue__`, {
-                                        ...extraContext,
-                                        __newValue__: newData[bindAttrName],
-                                    });
+                                    this.renderValue(`${attrValue}=__newValue__`, [
+                                        ...extraContexts,
+                                        { __newValue__: newData[bindAttrName], }
+                                    ]);
                                 }
                             } else {
                                 Object.entries(newData).forEach(([key, value]) => {
-                                    this.renderValue(`${attrValue}['${key}']=__newValue__`, {
-                                        ...extraContext,
-                                        __newValue__: value,
-                                    });
+                                    this.renderValue(`${attrValue}['${key}']=__newValue__`, [
+                                        ...extraContexts,
+                                        { __newValue__: value, }
+                                    ]);
                                 });
                             }
                         };
@@ -1079,25 +1078,25 @@ class Component extends EventTarget {
         }
 
         if (this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]) {
-            return await this.renderComponent(node, extraContext, listeners, dataBinders);
+            return await this.renderComponent(node, extraContexts, listeners, dataBinders);
         } else {
             if (node.nodeName == 'SLOT') {
-                return await this.renderSlot(node, extraContext);
+                return await this.renderSlot(node, extraContexts);
             } else if (node.nodeName == 'TEMPLATE') {
-                return await this.renderNodes(node.content.childNodes, extraContext);
+                return await this.renderNodes(node.content.childNodes, extraContexts);
             } else {
-                await this.renderNodes(node.childNodes, extraContext);
+                await this.renderNodes(node.childNodes, extraContexts);
                 return node;
             }
         }
     }
 
-    async renderSlot(node, extraContext) {
+    async renderSlot(node, extraContexts = []) {
         const slotName = node.name || '';
         let renderers = this._config.slotRenderers[slotName];
         if (!renderers) {
             renderers = [async () => {
-                await this.renderNodes(node.childNodes, extraContext);
+                await this.renderNodes(node.childNodes, extraContexts);
             }];
         }
         if (!renderers.executed) {
@@ -1109,7 +1108,33 @@ class Component extends EventTarget {
         return node;
     }
 
-    async renderIf(node, extraContext) {
+    async renderLet(node, extraContexts = [], varName) {
+        const list = [];
+
+        const varExpr = removeAttr(node, `wiy:let-${varName}`);
+
+        const pointer = document.createComment('let');//指示let块的位置
+        node.replaceWith(pointer);
+        list.push(pointer);
+
+        const localContext = tryCreateProxy({});
+        await this.observe(() => {
+            return this.renderValue(varExpr, extraContexts);
+        }, async (result) => {
+            localContext[varName] = result;
+        }, pointer, varExpr);
+
+        const content = await this.renderElement(node, [
+            ...extraContexts,
+            localContext,
+        ]);
+        await insertAfter(pointer, content);
+        list[1] = content;
+
+        return list;
+    }
+
+    async renderIf(node, extraContexts = []) {
         const list = [];
 
         const condition = removeAttr(node, 'wiy:if');
@@ -1119,14 +1144,14 @@ class Component extends EventTarget {
         list.push(pointer);
 
         await this.observe(() => {
-            return !!this.renderValue(condition, extraContext);
+            return !!this.renderValue(condition, extraContexts);
         }, async (result) => {
             if (list[1]) {//在if块中
                 await remove(list[1]);//移除旧内容
             }
 
             if (result) {//需要渲染
-                const content = await this.renderElement(node.cloneNode(true), extraContext);
+                const content = await this.renderElement(node.cloneNode(true), extraContexts);
                 await insertAfter(pointer, content);
                 list[1] = content;
             } else {//不需要渲染
@@ -1137,7 +1162,7 @@ class Component extends EventTarget {
         return list;
     }
 
-    async renderFor(node, extraContext) {
+    async renderFor(node, extraContexts = []) {
         const list = [];
 
         const forObj = removeAttr(node, 'wiy:for');
@@ -1182,7 +1207,7 @@ class Component extends EventTarget {
         let map = {};//之前渲染好的内容map，key是数组或对象的key，value是之前该key对应的value和已渲染好的内容
         let oldObj;
         await this.observe(() => {
-            const obj = this.renderValue(forObj, extraContext);
+            const obj = this.renderValue(forObj, extraContexts);
             if (_.isObject(obj)) {
                 if (!isProxyObj(obj)) {
                     console.warn(`${forObj}的值不是响应式对象，可能无法观察其属性变化`);
@@ -1221,11 +1246,10 @@ class Component extends EventTarget {
                         return;
                     }
 
-                    const content = await this.renderElement(node.cloneNode(true), {
-                        ...extraContext,
-                        [keyName]: key,
-                        [valueName]: value,
-                    });
+                    const content = await this.renderElement(node.cloneNode(true), [
+                        ...extraContexts,
+                        { [keyName]: key, [valueName]: value, }
+                    ]);
                     await adjustContent(oldContent, content, index);//更新内容
 
                     const data = oldData || {};
@@ -1245,34 +1269,34 @@ class Component extends EventTarget {
         return list;
     }
 
-    async renderNodes(nodes, extraContext) {
+    async renderNodes(nodes, extraContexts = []) {
         const list = [];
         for (let node of Array.from(nodes)) {
-            list.push(await this.renderNode(node, extraContext));
+            list.push(await this.renderNode(node, extraContexts));
         }
         return list;
     }
 
-    async renderNode(node, extraContext) {
+    async renderNode(node, extraContexts = []) {
         switch (node.nodeType) {
             case Node.TEXT_NODE:
-                return await this.renderTextOrAttr(node, extraContext);
+                return await this.renderTextOrAttr(node, extraContexts);
             case Node.ELEMENT_NODE:
-                return await this.renderElement(node, extraContext);
+                return await this.renderElement(node, extraContexts);
             case Node.DOCUMENT_FRAGMENT_NODE:
-                return await this.renderNodes(node.childNodes, extraContext);
+                return await this.renderNodes(node.childNodes, extraContexts);
             default:
                 return node;
         }
     }
 
-    async renderComponent(node, extraContext, listeners, dataBinders) {
+    async renderComponent(node, extraContexts = [], listeners, dataBinders) {
         const slotRenderers = {};
-        const addRenderer = (slotContentNode, slot = '', context = extraContext) => {
+        const addRenderer = (slotContentNode, slot = '', contexts = extraContexts) => {
             slot && slotContentNode.setAttribute('slot', slot);
             slotRenderers[slot] = slotRenderers[slot] || [];
             slotRenderers[slot].push(async () => {
-                const slotContent = await this.renderNode(slotContentNode, context);
+                const slotContent = await this.renderNode(slotContentNode, contexts);
                 slot && toNodeList(slotContent).filter(n => {
                     return n.nodeType == Node.ELEMENT_NODE;
                 }).forEach(n => {
@@ -1283,12 +1307,12 @@ class Component extends EventTarget {
 
         for (let childNode of Array.from(node.childNodes)) {
             if (childNode.nodeType == Node.ELEMENT_NODE && childNode.hasAttribute('wiy:slot')) {
-                const content = await this.renderElement(childNode, extraContext);
+                const content = await this.renderElement(childNode, extraContexts);
                 toNodeList(content).filter(n => {
                     return n.nodeType == Node.ELEMENT_NODE;
                 }).forEach(slotContentNode => {
-                    const { slot, context, } = slotContentNode._wiySlotInfo;
-                    addRenderer(slotContentNode, slot, context);
+                    const { slot, contexts, } = slotContentNode._wiySlotInfo;
+                    addRenderer(slotContentNode, slot, contexts);
                 });
             }
         }
@@ -1325,18 +1349,18 @@ class Component extends EventTarget {
         return node;
     }
 
-    renderString(template, extraContext) {
-        return renderHtmlInScope(template.replaceAll('{{', '${').replaceAll('}}', '}'), {
-            ...this._config.context,
-            ...extraContext,
-        });
+    renderString(template, extraContexts = []) {
+        return renderHtmlInScope(template.replaceAll('{{', '${').replaceAll('}}', '}'), [
+            { this: this._proxyThis },
+            ...extraContexts,
+        ]);
     }
 
-    renderValue(expression, extraContext) {
-        return renderValueInScope(expression, {
-            ...this._config.context,
-            ...extraContext,
-        });
+    renderValue(expression, extraContexts = []) {
+        return renderValueInScope(expression, [
+            { this: this._proxyThis },
+            ...extraContexts,
+        ]);
     }
 }
 
