@@ -1214,7 +1214,7 @@ class Component extends EventTarget {
             }
         };
 
-        let map = {};//之前渲染好的内容map，key是数组或对象的key，value是之前该key对应的value和已渲染好的内容
+        let map = {};//之前渲染好的内容map，key是数组或对象的key，value是之前该key已渲染好的内容
         let oldObj;
         await this.observe(() => {
             const obj = this.renderValue(forObj, extraContexts);
@@ -1227,50 +1227,37 @@ class Component extends EventTarget {
             return obj;
         }, async (result) => {
             const isArray = Array.isArray(result);
-            let i = 0;
-            for (let [key, value] of Object.entries(result)) {
-                i++;
-                let index = i;
+            let index = 0;
+            for (let key in result) {
+                index++;
                 if (isArray) {
                     key = parseInt(key);
                 }
 
-                let oldData = map[key];
-                if (oldData && (result == oldObj || value == oldData.value)) {//有之前渲染好的内容
-                    const oldContent = oldData.content;
+                const oldContent = map[key];
+                if (result == oldObj && oldContent) {//有之前渲染好的内容
                     await adjustContent(oldContent, oldContent, index);//只需要调节内容位置
                     continue;
                 }
 
+                const localContext = tryCreateProxy({});
                 await this.observe(() => {
                     return result[key];//这一行是为了观察obj中该key对应的value的变化，这样的话当该key对应的value变化时才能被通知
                 }, async (value) => {
-                    const oldContent = oldData ? oldData.content : undefined;
-
-                    if (!(key in result)) {//key被移除
-                        await adjustContent(oldContent);//清除内容
-                        return;
-                    }
-
-                    if (oldData && oldData.value == value) {//key对应的value没有发生变化
-                        return;
-                    }
-
-                    const content = await this.renderElement(node.cloneNode(true), [
-                        ...extraContexts,
-                        { [keyName]: key, [valueName]: value, }
-                    ]);
-                    await adjustContent(oldContent, content, index);//更新内容
-
-                    const data = oldData || {};
-                    data.value = value;
-                    data.content = content;
-                    oldData = map[key] = data;
+                    localContext[keyName] = key;
+                    localContext[valueName] = value;
                 }, pointer, `${forObj}[${key}]`);
+
+                const content = await this.renderElement(node.cloneNode(true), [
+                    ...extraContexts,
+                    localContext,
+                ]);
+                await adjustContent(oldContent, content, index);//更新内容
+                map[key] = content;
             }
-            while (i < list.length - 1) {//后续index上原有的内容需要清除
-                i++;
-                await adjustContent(list[i]);//清除内容
+            while (index < list.length - 1) {//后续index上原有的内容需要清除
+                index++;
+                await adjustContent(list[index]);//清除内容
             }
 
             oldObj = result;
