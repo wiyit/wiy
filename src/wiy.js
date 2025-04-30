@@ -1,4 +1,6 @@
 import _ from 'lodash';
+import { parseExpressionAt } from 'acorn';
+import { simple as walk } from 'acorn-walk';
 
 const removeAttr = (element, name) => {
     const attrNode = element.getAttributeNode(name);
@@ -7,39 +9,45 @@ const removeAttr = (element, name) => {
         return attrNode.nodeValue;
     }
 };
-const SafeRenderer = {
-    forHtml: (templateData, ...values) => {
-        let result = templateData[0];
-        for (let i = 0; i < values.length; i++) {
-            result += String(values[i])
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&apos;');
-            result += templateData[i + 1];
+const findValueInContexts = (name, contexts, callback) => {
+    for (let i = contexts.length - 1; i >= 0; i--) {
+        const context = contexts[i];
+        if (name in context) {
+            callback(context[name]);
+            return;
         }
-        return result;
     }
 };
-const renderHtmlInScope = (templateString, contexts = []) => {
-    return renderValueInScope(`(${SafeRenderer.forHtml})\`${templateString}\``, contexts);
-};
-const renderValueInScope = (expression, contexts = []) => {
+const renderValueInContexts = (expression, contexts = []) => {
+    let ast;
+    try {
+        ast = parseExpressionAt(expression, 0, { ecmaVersion: 'latest' });
+    } catch (e) {
+        throw new SyntaxError(`${e.message}\n表达式：\n${expression}\n`);
+    }
+
+    const variableNames = new Set();
+    walk(ast, {
+        Identifier(node) {
+            variableNames.add(node.name);
+        },
+    });
+
+    let thisObj;
     const paramNames = [];
     const paramValues = [];
-    let thisObj;
-    contexts.forEach(context => {
-        Object.entries(context).forEach(([name, value]) => {
-            if (name == 'this') {
-                thisObj = value;
-            } else {
-                paramNames.push(name);
-                paramValues.push(value);
-            }
+    findValueInContexts('this', contexts, (value) => {
+        thisObj = value;
+    });
+    variableNames.forEach(variableName => {
+        findValueInContexts(variableName, contexts, (value) => {
+            paramNames.push(variableName);
+            paramValues.push(value);
         });
     });
+
     const renderFunction = new Function(paramNames, `
+        'use strict';
 		return ${expression};
 	`);
     return renderFunction.apply(thisObj, paramValues);
@@ -873,11 +881,13 @@ class Component extends EventTarget {
 
     async renderTextOrAttr(node, extraContexts = []) {
         const originNodeValue = node.nodeValue;
-        await this.observe(() => {
-            return this.renderString(originNodeValue, extraContexts);
-        }, (result) => {
-            node.nodeValue = result;
-        }, node.ownerElement || node, originNodeValue);
+        if (originNodeValue?.includes('{{')) {
+            await this.observe(() => {
+                return this.renderString(originNodeValue, extraContexts);
+            }, (result) => {
+                node.nodeValue = result;
+            }, node.ownerElement || node, originNodeValue);
+        }
         return node;
     }
 
@@ -1350,14 +1360,11 @@ class Component extends EventTarget {
     }
 
     renderString(template, extraContexts = []) {
-        return renderHtmlInScope(template.replaceAll('{{', '${').replaceAll('}}', '}'), [
-            { this: this._proxyThis },
-            ...extraContexts,
-        ]);
+        return this.renderValue(`\`${template.replaceAll('{{', '${').replaceAll('}}', '}')}\``, extraContexts);
     }
 
     renderValue(expression, extraContexts = []) {
-        return renderValueInScope(expression, [
+        return renderValueInContexts(expression, [
             { this: this._proxyThis },
             ...extraContexts,
         ]);

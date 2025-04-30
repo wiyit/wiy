@@ -13,6 +13,8 @@
   "author": "wiyit",
   "license": "MIT",
   "dependencies": {
+    "acorn": "^8.14.1",
+    "acorn-walk": "^8.3.4",
     "lodash": "^4.17.21"
   },
   "repository": {
