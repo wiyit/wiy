@@ -18,16 +18,16 @@ const findValueInContexts = (name, contexts, callback) => {
         }
     }
 };
-const renderValueInContexts = (expression, contexts = []) => {
-    let ast;
+const parseAst = (expression) => {
     try {
-        ast = parseExpressionAt(expression, 0, { ecmaVersion: 'latest' });
+        return parseExpressionAt(expression, 0, { ecmaVersion: 'latest' });
     } catch (e) {
         throw new SyntaxError(`${e.message}\n表达式：\n${expression}\n`);
     }
-
+};
+const renderValueInContexts = (expression, contexts = []) => {
     const variableNames = new Set();
-    walk(ast, {
+    walk(parseAst(expression), {
         Identifier(node) {
             variableNames.add(node.name);
         },
@@ -1059,7 +1059,12 @@ class Component extends EventTarget {
                             }
                             if (bindAttrName) {
                                 if (bindAttrName in newData) {
-                                    this.renderValue(`${attrValue}=__newValue__`, [
+                                    const expression = `${attrValue}=__newValue__`;
+                                    let ast;
+                                    try {
+                                        ast = parseAst(expression);
+                                    } catch (e) { }
+                                    ast && this.renderValue(expression, [
                                         ...extraContexts,
                                         { __newValue__: newData[bindAttrName], }
                                     ]);
