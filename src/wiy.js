@@ -1510,12 +1510,24 @@ class App extends EventTarget {
         this._config.components[name.toUpperCase()] = component;
     }
 
+    registerComponents(components) {
+        Object.entries(components).forEach(([name, component]) => {
+            this.registerComponent(name, component);
+        });
+    }
+
     registerMethod(name, method) {
         Object.defineProperty(this, name, {
             writable: false,
             configurable: false,
             enumerable: false,
             value: method.bind(this._proxyThis),
+        });
+    }
+
+    registerMethods(methods) {
+        Object.entries(methods).forEach(([name, method]) => {
+            this.registerMethod(name, method);
         });
     }
 
@@ -1601,6 +1613,8 @@ class Router extends EventTarget {
         const url = path ? new URL(this._base + path, location) : new URL(location);
         if (clearOldParams) {
             url.search = '';
+        } else {
+            url.search = location.search;
         }
         Object.entries(params).forEach(([name, value]) => {
             url.searchParams.set(name, value);
