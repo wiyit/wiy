@@ -646,7 +646,7 @@ class Component extends EventTarget {
             this[name] = value;
         });
         for (let [name, value] of Object.entries(this._config.dataBinders || {})) {
-            await value(this);
+            await value(this._proxyThis);
         }
         await this.executeLifecycle('init');
     }
@@ -856,23 +856,22 @@ class Component extends EventTarget {
         let oldResult;
         const startObserve = async (notifier) => {
             let result;
-            let needCallback = false;
             OBSERVER_MANAGER.push(observer);
             try {
-                result = await func();
-                if (!firstObserve && !_.isObject(result) && oldResult == result) {
-                    return;
-                }
-                needCallback = true;
+                result = func();
             } finally {
                 OBSERVER_MANAGER.pop();
-                if (needCallback) {
-                    const callbackResult = await callback(result, firstObserve, notifier);
-                    firstObserve = false;
-                    oldResult = result;
-                    return callbackResult;
-                }
             }
+
+            result = await result;
+            if (!firstObserve && !_.isObject(result) && oldResult == result) {
+                return;
+            }
+
+            const callbackResult = await callback(result, firstObserve, notifier);
+            firstObserve = false;
+            oldResult = result;
+            return callbackResult;
         };
         const observer = new Observer({
             callback: async (notifier) => {
@@ -889,8 +888,8 @@ class Component extends EventTarget {
     async renderTextOrAttr(node, extraContexts = []) {
         const originNodeValue = node.nodeValue;
         if (originNodeValue?.includes('{{')) {
-            await this.observe(() => {
-                return this.actual(this.renderString(originNodeValue, extraContexts));
+            await this.observe(async () => {
+                return await this.actual(this.renderString(originNodeValue, extraContexts));
             }, (result) => {
                 node.nodeValue = result;
             }, node.ownerElement || node, originNodeValue);
@@ -944,8 +943,8 @@ class Component extends EventTarget {
                         eventHandler,
                     ];
                 } else if (attrName == 'wiy:html') {
-                    await this.observe(() => {
-                        return this.actual(this.renderValue(attrValue, extraContexts));
+                    await this.observe(async () => {
+                        return await this.actual(this.renderValue(attrValue, extraContexts));
                     }, (result) => {
                         if (_.isUndefined(result) || _.isNull(result)) {
                             node.innerHTML = '';
@@ -959,8 +958,8 @@ class Component extends EventTarget {
                         bindAttrName = attrName.slice(9);
                     }
                     if (bindAttrName) {
-                        await this.observe(() => {
-                            return this.actual(this.renderValue(attrValue, extraContexts));
+                        await this.observe(async () => {
+                            return await this.actual(this.renderValue(attrValue, extraContexts));
                         }, (result) => {
                             if (_.isUndefined(result) || _.isNull(result)) {
                                 node.removeAttribute(bindAttrName);
@@ -978,21 +977,21 @@ class Component extends EventTarget {
                     }
 
                     await this.observe(async () => {
-                        const result = await this.actual(this.renderValue(attrValue, extraContexts));
-                        if (!bindAttrName && _.isObject(result)) {//未绑定具体属性时，实际则需要观察对象中的所有属性的变化
-                            if (!isProxyObj(result)) {
-                                console.warn(`${attrValue}的值不是响应式对象，可能无法观察其属性变化`);
-                            }
-                            Object.entries(result);//这一行是为了观察对象中的keys和values变化
-                        }
-                        return result;
-                    }, (result) => {
+                        return await this.actual(this.renderValue(attrValue, extraContexts));
+                    }, async (result) => {
                         if (bindAttrName) {
                             node.style[bindAttrName] = result;
                         } else {
-                            Object.entries(result || {}).forEach(([key, value]) => {
-                                node.style[key] = value;
-                            });
+                            if (_.isUndefined(result)) {
+                                return;
+                            }
+                            await this.observe(() => {
+                                return Object.entries(result);
+                            }, (entries) => {
+                                entries.forEach(([key, value]) => {
+                                    node.style[key] = value;
+                                });
+                            }, node, `Object.entries(${attrValue})`);
                         }
                     }, node, attrValue);
                 } else if (attrName.startsWith('wiy:data')) {
@@ -1008,18 +1007,24 @@ class Component extends EventTarget {
                         eventType = 'change';
                         dataBinders[bindAttrName || ''] = async (component) => {
                             await this.observe(async () => {
-                                const result = await this.actual(this.renderValue(attrValue, extraContexts));
-                                if (!bindAttrName && _.isObject(result)) {//未绑定具体属性时，实际则需要观察对象中的所有属性的变化
-                                    if (!isProxyObj(result)) {
-                                        console.warn(`${attrValue}的值不是响应式对象，可能无法观察其属性变化`);
-                                    }
-                                    Object.entries(result);//这一行是为了观察对象中的keys和values变化
+                                return await this.actual(this.renderValue(attrValue, extraContexts));
+                            }, async (result) => {
+                                if (_.isUndefined(result)) {
+                                    return;
                                 }
-                                return result;
-                            }, (result) => {
-                                component.setData(bindAttrName ? {
-                                    [bindAttrName]: result,
-                                } : result);
+                                if (bindAttrName) {
+                                    component[bindAttrName] = result;
+                                } else {
+                                    await this.observe(() => {
+                                        return Object.entries(result);
+                                    }, (entries) => {
+                                        entries.filter(([key, value]) => {
+                                            return !_.isUndefined(value);
+                                        }).forEach(([key, value]) => {
+                                            component[key] = value;
+                                        });
+                                    }, node, `Object.entries(${attrValue})`);
+                                }
                             }, node, attrValue);
                         };
                     } else {
@@ -1044,8 +1049,8 @@ class Component extends EventTarget {
                                 break;
                         }
                         if (bindAttrName) {
-                            await this.observe(() => {
-                                return this.actual(this.renderValue(attrValue, extraContexts));
+                            await this.observe(async () => {
+                                return await this.actual(this.renderValue(attrValue, extraContexts));
                             }, (result) => {
                                 if (_.isUndefined(result) || _.isNull(result)) {
                                     delete node[bindAttrName];
@@ -1140,9 +1145,9 @@ class Component extends EventTarget {
         list.push(pointer);
 
         const localContext = tryCreateProxy({});
-        await this.observe(() => {
-            return this.actual(this.renderValue(varExpr, extraContexts));
-        }, async (result) => {
+        await this.observe(async () => {
+            return await this.actual(this.renderValue(varExpr, extraContexts));
+        }, (result) => {
             localContext[varName] = result;
         }, pointer, varExpr);
 
@@ -1229,53 +1234,50 @@ class Component extends EventTarget {
         let map = {};//之前渲染好的内容map，key是数组或对象的key，value是之前该key对应的数据
         let oldObj;
         await this.observe(async () => {
-            const obj = await this.actual(this.renderValue(forObj, extraContexts));
-            if (_.isObject(obj)) {
-                if (!isProxyObj(obj)) {
-                    console.warn(`${forObj}的值不是响应式对象，可能无法观察其属性变化`);
-                }
-                Object.keys(obj);//这一行是为了观察obj中keys的变化，这样的话当keys变化时才能被通知
-            }
-            return obj;
+            return await this.actual(this.renderValue(forObj, extraContexts));
         }, async (result) => {
             const isArray = Array.isArray(result);
-            let index = 0;
-            for (let key in result) {
-                index++;
-                if (isArray) {
-                    key = parseInt(key);
+
+            await this.observe(() => {
+                return Object.keys(result);
+            }, async (keys) => {
+                let index = 0;
+                for (let key of keys) {
+                    index++;
+                    if (isArray) {
+                        key = parseInt(key);
+                    }
+
+                    const { oldValue, oldContent } = map[key] = map[key] || {};
+
+                    const localContext = tryCreateProxy({});
+                    const newValue = await this.observe(async () => {
+                        return await this.actual(result[key]);//这一行是为了观察obj中该key对应的value的变化，这样的话当该key对应的value变化时才能被通知
+                    }, (value) => {
+                        localContext[keyName] = key;
+                        localContext[valueName] = value;
+                        return map[key].oldValue = localContext[valueName];//记录响应式结果
+                    }, pointer, `${forObj}[${key}]`);
+
+                    if (newValue == oldValue && oldContent) {//该key对应的value没变，并且有之前渲染好的内容
+                        await adjustContent(oldContent, oldContent, index);//只需要调节内容位置
+                        continue;
+                    }
+
+                    const newContent = await this.renderElement(node.cloneNode(true), [
+                        ...extraContexts,
+                        localContext,
+                    ]);
+                    await adjustContent(oldContent, newContent, index);//更新内容
+                    map[key].oldContent = newContent;//记录渲染好的内容
+                }
+                while (index < list.length - 1) {//后续index上原有的内容需要清除
+                    index++;
+                    await adjustContent(list[index]);//清除内容
                 }
 
-                const { oldValue, oldContent } = map[key] = map[key] || {};
-                const newValue = result[key];
-
-                if (newValue == oldValue && oldContent) {//该key对应的value没变，并且有之前渲染好的内容
-                    await adjustContent(oldContent, oldContent, index);//只需要调节内容位置
-                    continue;
-                }
-
-                const localContext = tryCreateProxy({});
-                await this.observe(() => {
-                    return this.actual(result[key]);//这一行是为了观察obj中该key对应的value的变化，这样的话当该key对应的value变化时才能被通知
-                }, async (value) => {
-                    localContext[keyName] = key;
-                    localContext[valueName] = value;
-                    map[key].oldValue = localContext[valueName];//记录响应式结果
-                }, pointer, `${forObj}[${key}]`);
-
-                const newContent = await this.renderElement(node.cloneNode(true), [
-                    ...extraContexts,
-                    localContext,
-                ]);
-                await adjustContent(oldContent, newContent, index);//更新内容
-                map[key].oldContent = newContent;//记录渲染好的内容
-            }
-            while (index < list.length - 1) {//后续index上原有的内容需要清除
-                index++;
-                await adjustContent(list[index]);//清除内容
-            }
-
-            oldObj = result;
+                oldObj = result;
+            }, pointer, `Object.keys(${forObj})`);
         }, pointer, forObj);
 
         return list;
