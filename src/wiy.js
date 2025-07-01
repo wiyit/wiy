@@ -945,11 +945,12 @@ class Component extends EventTarget {
                 } else if (attrName == 'wiy:html') {
                     await this.observe(async () => {
                         return await this.actual(this.renderValue(attrValue, extraContexts));
-                    }, (result) => {
+                    }, async (result, firstObserve) => {
+                        await remove(node.childNodes);
                         if (_.isUndefined(result) || _.isNull(result)) {
-                            node.innerHTML = '';
                         } else {
                             node.innerHTML = result;
+                            !firstObserve && await this.renderNodes(node.childNodes, extraContexts);
                         }
                     }, node, attrValue);
                 } else if (attrName.startsWith('wiy:attr-')) {
