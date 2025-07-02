@@ -1613,13 +1613,24 @@ class Router extends EventTarget {
     }
 
     toUrl(path, params = {}, clearOldParams = true) {
+        const oldUrl = new URL(location);
+        const oldParams = Array.from(oldUrl.searchParams.entries());
+        oldUrl.search = '';
+
         const url = path ? new URL(this._base + path, location) : new URL(location);
-        if (clearOldParams) {
-            url.search = '';
-        } else {
-            url.search = location.search;
+        const newParams = Array.from(url.searchParams.entries());
+
+        if (!clearOldParams) {
+            oldParams.forEach(([name, value]) => {//原url中的参数
+                url.searchParams.set(name, value);
+            });
         }
-        Object.entries(params).forEach(([name, value]) => {
+
+        newParams.forEach(([name, value]) => {//新url中的参数
+            url.searchParams.set(name, value);
+        });
+
+        Object.entries(params).forEach(([name, value]) => {//额外传入的参数
             url.searchParams.set(name, value);
         });
         return url;
