@@ -699,7 +699,9 @@ class Component extends EventTarget {
     }
 
     getComponent(id) {
-        return this.getElement(id)?._wiyComponent;
+        return this.getElement(id)?._wiyComponent || [...this._children].find(child => {
+            return child._element?.id === id;
+        });
     }
 
     getParent() {
