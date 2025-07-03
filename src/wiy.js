@@ -850,6 +850,10 @@ class Component extends EventTarget {
         await this.executeLifecycle('destroy');
     }
 
+    async remove() {
+        await remove(this._element);
+    }
+
     async observe(func, callback, destroyWithNode, info) {
         let firstObserve = true;
         let oldResult;
