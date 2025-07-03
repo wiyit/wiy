@@ -1069,12 +1069,12 @@ class Component extends EventTarget {
                             }
                         };
                         listeners['change'] = [
-                            ...(listeners['change'] || []),
                             eventHandler,
+                            ...(listeners['change'] || []),
                         ];
                         listeners['datainit'] = [
-                            ...(listeners['datainit'] || []),
                             eventHandler,
+                            ...(listeners['datainit'] || []),
                         ];
                     } else {//普通标签
                         if (bindAttrName) {//必须绑定具体属性
