@@ -524,7 +524,7 @@ const toNodeList = (obj) => {
     } else {
         const list = [];
         for (let item of obj) {
-            if (_.isUndefined(item)) {
+            if (_.isNil(item)) {
                 continue;
             }
             for (let node of toNodeList(item)) {
@@ -645,8 +645,8 @@ class Component extends EventTarget {
         Object.entries(data || {}).forEach(([name, value]) => {
             this[name] = value;
         });
-        for (let [name, value] of Object.entries(this._config.dataBinders || {})) {
-            await value(this._proxyThis);
+        for (let dataBinder of (this._config.dataBinders || [])) {
+            await dataBinder(this._proxyThis);
         }
         await this.executeLifecycle('init');
     }
@@ -661,9 +661,7 @@ class Component extends EventTarget {
 
     setData(data) {
         Object.entries(data || {}).forEach(([name, value]) => {
-            if (!_.isUndefined(value)) {
-                this._proxyThis[name] = value;
-            }
+            this._proxyThis[name] = value;
         });
     }
 
@@ -676,7 +674,7 @@ class Component extends EventTarget {
     }
 
     hasSlotTemplate(name = '') {
-        return !_.isUndefined(this._config.slotRenderers[name]);
+        return name in this._config.slotRenderers;
     }
 
     on(eventType, listener) {
@@ -701,8 +699,7 @@ class Component extends EventTarget {
     }
 
     getComponent(id) {
-        const element = this.getElement(id);
-        return element ? element._wiyComponent : undefined;
+        return this.getElement(id)?._wiyComponent;
     }
 
     getParent() {
@@ -723,7 +720,7 @@ class Component extends EventTarget {
             throw new Error(`${component._uuid}不是${this._uuid}的子组件`);
         }
         this._children.delete(component._proxyThis);
-        component._parent = undefined;
+        component._parent = null;
     }
 
     raw(obj) {
@@ -760,8 +757,8 @@ class Component extends EventTarget {
                 await child.mount(child._oldElement);
             }
 
-            this._oldElement = undefined;
-            this._oldParent = undefined;
+            this._oldElement = null;
+            this._oldParent = null;
             this._oldChildren.clear();
 
             OBSERVER_MANAGER.continue(this);//继续观察
@@ -825,8 +822,8 @@ class Component extends EventTarget {
         this._parent?.removeChild(this);//解除父子组件关联
 
         //解除element与组件关联
-        this._element._wiyComponent = undefined;
-        this._element = undefined;
+        this._element._wiyComponent = null;
+        this._element = null;
 
         await this.executeLifecycle('unmount', {
             element: this._oldElement,
@@ -922,8 +919,60 @@ class Component extends EventTarget {
             return node;
         }
 
+        const getCommandBindAttrName = (command, attrName) => {
+            const prefix = `${command}-`;
+            if (attrName.startsWith(prefix)) {
+                return attrName.slice(prefix.length);
+            } else if (attrName != command) {
+                return;
+            }
+
+            if (command == 'wiy:data') {
+                switch (node.nodeName) {//部分表单标签在不指定绑定属性时，有默认绑定属性
+                    case 'INPUT':
+                        switch (node.getAttribute('type')) {
+                            case 'checkbox':
+                            case 'radio':
+                                return 'checked';
+                            default:
+                                return 'value';
+                        }
+                    case 'TEXTAREA':
+                    case 'SELECT':
+                        return 'value';
+                }
+            }
+            return '';
+        };
+        const processCommand = async (command, attrName, attrValue, callback) => {
+            const bindAttrName = getCommandBindAttrName(command, attrName);
+            if (_.isNil(bindAttrName)) {
+                return;
+            }
+
+            await this.observe(async () => {
+                return await this.actual(this.renderValue(attrValue, extraContexts));
+            }, async (result, firstObserve) => {
+                if (bindAttrName) {
+                    await callback(bindAttrName, result, firstObserve);
+                } else {
+                    if (_.isNil(result)) {
+                        return;
+                    }
+                    await this.observe(() => {
+                        return Object.entries(result);
+                    }, async (entries, firstObserveOfEntries) => {
+                        for (let [key, value] of entries) {
+                            await callback(key, value, firstObserve && firstObserveOfEntries);
+                        }
+                    }, node, `Object.entries(${attrValue})`);
+                }
+            }, node, attrValue);
+        };
+
+        const componentConfig = this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName];
         const listeners = {};
-        const dataBinders = {};
+        const dataBinders = [];
         for (let attrNode of Array.from(node.attributes)) {//需先转成数组，防止遍历过程中删除属性导致遍历出错
             await this.renderTextOrAttr(attrNode, extraContexts);
             const attrName = attrNode.nodeName;
@@ -947,165 +996,93 @@ class Component extends EventTarget {
                         return await this.actual(this.renderValue(attrValue, extraContexts));
                     }, async (result, firstObserve) => {
                         await remove(node.childNodes);
-                        if (_.isUndefined(result) || _.isNull(result)) {
+                        if (_.isNil(result)) {
                         } else {
                             node.innerHTML = result;
                             !firstObserve && await this.renderNodes(node.childNodes, extraContexts);
                         }
                     }, node, attrValue);
-                } else if (attrName.startsWith('wiy:attr-')) {
-                    let bindAttrName;
-                    if (attrName.startsWith('wiy:attr-')) {
-                        bindAttrName = attrName.slice(9);
-                    }
-                    if (bindAttrName) {
-                        await this.observe(async () => {
-                            return await this.actual(this.renderValue(attrValue, extraContexts));
-                        }, (result) => {
-                            if (_.isUndefined(result) || _.isNull(result)) {
-                                node.removeAttribute(bindAttrName);
-                            } else {
-                                node.setAttribute(bindAttrName, result);
-                            }
-                        }, node, attrValue);
-                    }
-                } else if (attrName.startsWith('wiy:style')) {
-                    let bindAttrName;
-                    if (attrName.startsWith('wiy:style-')) {
-                        bindAttrName = attrName.slice(10);
-                    } else if (attrName != 'wiy:style') {
-                        continue;
-                    }
-
-                    await this.observe(async () => {
-                        return await this.actual(this.renderValue(attrValue, extraContexts));
-                    }, async (result) => {
-                        if (bindAttrName) {
-                            node.style[bindAttrName] = result;
+                } else if (attrName.startsWith('wiy:attr')) {
+                    await processCommand('wiy:attr', attrName, attrValue, (key, value) => {
+                        if (_.isNil(value)) {
+                            node.removeAttribute(key);
                         } else {
-                            if (_.isUndefined(result)) {
-                                return;
-                            }
-                            await this.observe(() => {
-                                return Object.entries(result);
-                            }, (entries) => {
-                                entries.forEach(([key, value]) => {
-                                    node.style[key] = value;
-                                });
-                            }, node, `Object.entries(${attrValue})`);
+                            node.setAttribute(key, value);
                         }
-                    }, node, attrValue);
+                    });
+                } else if (attrName.startsWith('wiy:style')) {
+                    await processCommand('wiy:style', attrName, attrValue, (key, value) => {
+                        node.style[key] = value;
+                    });
                 } else if (attrName.startsWith('wiy:data')) {
-                    let bindAttrName;
-                    if (attrName.startsWith('wiy:data-')) {
-                        bindAttrName = attrName.slice(9);
-                    } else if (attrName != 'wiy:data') {
+                    let bindAttrName = getCommandBindAttrName('wiy:data', attrName);
+                    if (_.isNil(bindAttrName)) {
                         continue;
                     }
 
-                    let eventType;
-                    if (this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]) {
-                        eventType = 'change';
-                        dataBinders[bindAttrName || ''] = async (component) => {
-                            await this.observe(async () => {
-                                return await this.actual(this.renderValue(attrValue, extraContexts));
-                            }, async (result) => {
-                                if (_.isUndefined(result)) {
+                    const assignValue = (expression, value) => {
+                        expression = `${expression}=__newValue__`;
+                        let ast;
+                        try {
+                            ast = parseAst(expression);
+                        } catch (e) { }
+                        ast && this.renderValue(expression, [
+                            ...extraContexts,
+                            { __newValue__: value, }
+                        ]);
+                    };
+
+                    if (componentConfig) {//组件
+                        dataBinders.push(async (component) => {
+                            await processCommand('wiy:data', attrName, attrValue, (key, value, firstObserve) => {
+                                if (firstObserve && _.isUndefined(value)) {//首次赋值时，值未定义，不向组件赋值
                                     return;
                                 }
-                                if (bindAttrName) {
-                                    component[bindAttrName] = result;
-                                } else {
-                                    await this.observe(() => {
-                                        return Object.entries(result);
-                                    }, (entries) => {
-                                        entries.filter(([key, value]) => {
-                                            return !_.isUndefined(value);
-                                        }).forEach(([key, value]) => {
-                                            component[key] = value;
-                                        });
-                                    }, node, `Object.entries(${attrValue})`);
-                                }
-                            }, node, attrValue);
-                        };
-                    } else {
-                        switch (node.nodeName) {
-                            case 'INPUT':
-                                switch (node.getAttribute('type')) {
-                                    case 'checkbox':
-                                    case 'radio':
-                                        bindAttrName = bindAttrName || 'checked';
-                                        eventType = 'change';
-                                        break;
-                                    default:
-                                        bindAttrName = bindAttrName || 'value';
-                                        eventType = 'change';
-                                        break;
-                                }
-                                break;
-                            case 'TEXTAREA':
-                            case 'SELECT':
-                                bindAttrName = bindAttrName || 'value';
-                                eventType = 'change';
-                                break;
-                        }
-                        if (bindAttrName) {
-                            await this.observe(async () => {
-                                return await this.actual(this.renderValue(attrValue, extraContexts));
-                            }, (result) => {
-                                if (_.isUndefined(result) || _.isNull(result)) {
-                                    delete node[bindAttrName];
-                                } else {
-                                    node[bindAttrName] = result;
-                                }
-                            }, node, attrValue);
-                        }
-                    }
+                                component[key] = value;
+                            });
+                        });
 
-                    if (eventType) {
                         const eventHandler = (e) => {
-                            let newData;
-                            if (e instanceof WiyEvent) {
-                                newData = e.data;
-                            } else {
-                                newData = node;
-                            }
-                            if (bindAttrName) {
-                                if (bindAttrName in newData) {
-                                    const expression = `${attrValue}=__newValue__`;
-                                    let ast;
-                                    try {
-                                        ast = parseAst(expression);
-                                    } catch (e) { }
-                                    ast && this.renderValue(expression, [
-                                        ...extraContexts,
-                                        { __newValue__: newData[bindAttrName], }
-                                    ]);
+                            const newData = e.data;
+                            if (bindAttrName) {//绑定具体属性
+                                if (bindAttrName in newData) {//变化数据中包含该属性
+                                    assignValue(attrValue, newData[bindAttrName]);
                                 }
                             } else {
                                 Object.entries(newData).forEach(([key, value]) => {
-                                    this.renderValue(`${attrValue}['${key}']=__newValue__`, [
-                                        ...extraContexts,
-                                        { __newValue__: value, }
-                                    ]);
+                                    assignValue(`${attrValue}['${key}']`, value);
                                 });
                             }
                         };
-                        node.addEventListener(eventType, eventHandler);
-                        listeners[eventType] = [
-                            ...(listeners[eventType] || []),
+                        listeners['change'] = [
+                            ...(listeners['change'] || []),
                             eventHandler,
                         ];
                         listeners['datainit'] = [
                             ...(listeners['datainit'] || []),
                             eventHandler,
                         ];
+                    } else {//普通标签
+                        if (bindAttrName) {//必须绑定具体属性
+                            await processCommand('wiy:data', attrName, attrValue, (key, value) => {
+                                if (_.isNil(value)) {
+                                    node[key] = null;
+                                } else {
+                                    node[key] = value;
+                                }
+                            });
+
+                            const eventHandler = (e) => {
+                                assignValue(attrValue, node[bindAttrName]);
+                            };
+                            node.addEventListener('change', eventHandler);
+                        }
                     }
                 }
             }
         }
 
-        if (this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]) {
+        if (componentConfig) {
             return await this.renderComponent(node, extraContexts, listeners, dataBinders);
         } else {
             if (node.nodeName == 'SLOT') {
@@ -1183,7 +1160,7 @@ class Component extends EventTarget {
                 await insertAfter(pointer, content);
                 list[1] = content;
             } else {//不需要渲染
-                list[1] = undefined;
+                list[1] = null;
             }
         }, pointer, condition);
 
@@ -1209,7 +1186,7 @@ class Component extends EventTarget {
 
             if (oldContent && oldIndex >= 0) {//在for块中
                 await remove(oldContent, oldContent != newContent);
-                list[oldIndex] = undefined;
+                list[oldIndex] = null;
             }
 
             if (newContent) {
@@ -1396,7 +1373,6 @@ class App extends EventTarget {
                 writable: true,
                 configurable: false,
                 enumerable: false,
-                value: undefined,
             },
             _router: {
                 writable: false,
@@ -1603,13 +1579,15 @@ class Router extends EventTarget {
     }
 
     isInternalLink(link) {
-        return !_.isUndefined(this.toRelativePath(link));
+        return !_.isNil(this.toRelativePath(link));
     }
 
     toRelativePath(link) {
         const href = new URL(link, location).href;
         const baseHref = new URL(this._base, location).href;
-        return href.startsWith(baseHref) ? href.slice(baseHref.length) : undefined;
+        if (href.startsWith(baseHref)) {
+            return href.slice(baseHref.length);
+        }
     }
 
     toUrl(path, params = {}, clearOldParams = true) {
