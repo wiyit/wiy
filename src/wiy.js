@@ -1016,6 +1016,14 @@ class Component extends EventTarget {
                             node.setAttribute(key, value);
                         }
                     });
+                } else if (attrName.startsWith('wiy:class')) {
+                    await processCommand('wiy:class', attrName, attrValue, (key, value) => {
+                        if (!value) {
+                            node.classList.remove(key);
+                        } else {
+                            node.classList.add(key);
+                        }
+                    });
                 } else if (attrName.startsWith('wiy:style')) {
                     await processCommand('wiy:style', attrName, attrValue, (key, value) => {
                         node.style[key] = value;
