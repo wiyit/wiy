@@ -115,7 +115,7 @@ class Queue {
     }
 
     isEmpty() {
-        return this.size() == 0;
+        return this.size() === 0;
     }
 }
 class Stack {
@@ -147,7 +147,7 @@ class Stack {
     }
 
     isEmpty() {
-        return this.size() == 0;
+        return this.size() === 0;
     }
 
     forEach(callback) {
@@ -264,7 +264,7 @@ class ObserverManager {
         this._map.forEach((temp, target) => {
             temp.forEach((observers, prop) => {
                 observers.forEach(observer => {
-                    if (observer.getComponent()._rawThis == component._rawThis) {
+                    if (observer.getComponent()._rawThis === component._rawThis) {
                         observer.pause();
                     }
                 });
@@ -276,7 +276,7 @@ class ObserverManager {
         this._map.forEach((temp, target) => {
             temp.forEach((observers, prop) => {
                 observers.forEach(observer => {
-                    if (observer.getComponent()._rawThis == component._rawThis) {
+                    if (observer.getComponent()._rawThis === component._rawThis) {
                         observer.continue();
                     }
                 });
@@ -288,7 +288,7 @@ class ObserverManager {
         this._map.forEach((temp, target) => {
             temp.forEach((observers, prop) => {
                 observers.forEach(observer => {
-                    if (observer.getComponent()._rawThis == component._rawThis) {
+                    if (observer.getComponent()._rawThis === component._rawThis) {
                         observer.destroy();
                         observers.delete(observer);
                     }
@@ -301,7 +301,7 @@ class ObserverManager {
         this._map.forEach((temp, target) => {
             temp.forEach((observers, prop) => {
                 observers.forEach(observer => {
-                    if (observer.getDestroyWithNode() == node) {
+                    if (observer.getDestroyWithNode() === node) {
                         observer.destroy();
                         observers.delete(observer);
                     }
@@ -385,7 +385,7 @@ class Observer {
     }
 
     isActive() {
-        return this._status == 'active';
+        return this._status === 'active';
     }
 }
 const isProxyObj = (obj) => {
@@ -431,7 +431,7 @@ const tryCreateProxy = (obj) => {
             }
             const result = Reflect.set(target, prop, value);
             if (propsChanged || value != oldValue
-                || (Array.isArray(target) && prop == 'length')) {
+                || (Array.isArray(target) && prop === 'length')) {
                 OBSERVER_MANAGER.notify(target, prop, propsChanged);
             }
             return result;
@@ -687,7 +687,7 @@ class Component extends EventTarget {
 
     onEventPath(e) {
         return e.composedPath().some(node => {
-            return node == this || node._rawThis == this._rawThis || node == this._element;
+            return node === this || node._rawThis === this._rawThis || node === this._element;
         });
     }
 
@@ -869,7 +869,7 @@ class Component extends EventTarget {
             }
 
             result = await result;
-            if (!firstObserve && !_.isObject(result) && oldResult == result) {
+            if (!firstObserve && !_.isObject(result) && oldResult === result) {
                 return;
             }
 
@@ -935,7 +935,7 @@ class Component extends EventTarget {
                 return;
             }
 
-            if (command == 'wiy:data') {
+            if (command === 'wiy:data') {
                 switch (node.nodeName) {//部分表单标签在不指定绑定属性时，有默认绑定属性
                     case 'INPUT':
                         switch (node.getAttribute('type')) {
@@ -1017,7 +1017,7 @@ class Component extends EventTarget {
                         ...(listeners[eventType] || []),
                         eventHandler,
                     ];
-                } else if (attrName == 'wiy:html') {
+                } else if (attrName === 'wiy:html') {
                     await this.observe(async () => {
                         return await this.actual(this.renderValue(attrValue, extraContexts));
                     }, async (result, firstObserve) => {
@@ -1118,9 +1118,9 @@ class Component extends EventTarget {
                 await dataBinder();
             }
 
-            if (node.nodeName == 'SLOT') {
+            if (node.nodeName === 'SLOT') {
                 return await this.renderSlot(node, extraContexts);
-            } else if (node.nodeName == 'TEMPLATE') {
+            } else if (node.nodeName === 'TEMPLATE') {
                 return await this.renderNodes(node.content.childNodes, extraContexts);
             } else {
                 await this.renderNodes(node.childNodes, extraContexts);
@@ -1213,7 +1213,7 @@ class Component extends EventTarget {
 
         const adjustContent = async (oldContent, newContent, index) => {
             const oldIndex = list.indexOf(oldContent);
-            if (oldIndex == index && oldContent == newContent) {//位置没变，内容没变
+            if (oldIndex === index && oldContent === newContent) {//位置没变，内容没变
                 return;
             }
 
@@ -1230,7 +1230,7 @@ class Component extends EventTarget {
                         const nodeList = toNodeList(prevContent);
                         for (let i = nodeList.length - 1; i >= 0; i--) {//找到最后一个在dom中的节点
                             const node = nodeList[i];
-                            if (node.parentNode == pointer.parentNode || node.isConnected) {//节点没有被移除
+                            if (node.parentNode === pointer.parentNode || node.isConnected) {//节点没有被移除
                                 await insertAfter(node, newContent);
                                 list[index] = newContent;
                                 return;
@@ -1270,7 +1270,7 @@ class Component extends EventTarget {
                         return map[key].oldValue = localContext[valueName];//记录响应式结果
                     }, pointer, `${forObj}[${key}]`);
 
-                    if (newValue == oldValue && oldContent) {//该key对应的value没变，并且有之前渲染好的内容
+                    if (newValue === oldValue && oldContent) {//该key对应的value没变，并且有之前渲染好的内容
                         await adjustContent(oldContent, oldContent, index);//只需要调节内容位置
                         continue;
                     }
@@ -1323,7 +1323,7 @@ class Component extends EventTarget {
             slotRenderers[slot].push(async () => {
                 const slotContent = await this.renderNode(slotContentNode, contexts);
                 slot && toNodeList(slotContent).filter(n => {
-                    return n.nodeType == Node.ELEMENT_NODE;
+                    return n.nodeType === Node.ELEMENT_NODE;
                 }).forEach(n => {
                     n.setAttribute('slot', slot);
                 });
@@ -1331,10 +1331,10 @@ class Component extends EventTarget {
         };
 
         for (let childNode of Array.from(node.childNodes)) {
-            if (childNode.nodeType == Node.ELEMENT_NODE && childNode.hasAttribute('wiy:slot')) {
+            if (childNode.nodeType === Node.ELEMENT_NODE && childNode.hasAttribute('wiy:slot')) {
                 const content = await this.renderElement(childNode, extraContexts);
                 toNodeList(content).filter(n => {
-                    return n.nodeType == Node.ELEMENT_NODE;
+                    return n.nodeType === Node.ELEMENT_NODE;
                 }).forEach(slotContentNode => {
                     const { slot, contexts, } = slotContentNode._wiySlotInfo;
                     addRenderer(slotContentNode, slot, contexts);
@@ -1506,7 +1506,7 @@ class App extends EventTarget {
             };
 
             const define = await loadComponentDefine(this._config.pages[info.path] || this._config.pages[this._config.index]);
-            if (define._uuid == this._currentPage?._config._uuid) {
+            if (define._uuid === this._currentPage?._config._uuid) {
                 resolve(this._currentPage);
             } else {
                 const page = this.newComponent(define);
@@ -1649,7 +1649,7 @@ class Router extends EventTarget {
 
     go(path, params = {}, clearOldParams = true) {
         const newUrl = this.toUrl(path, params, clearOldParams);
-        if (newUrl.href == location.href) {
+        if (newUrl.href === location.href) {
             return;
         }
         history.pushState(null, null, newUrl);
@@ -1658,7 +1658,7 @@ class Router extends EventTarget {
 
     replace(path, params = {}, clearOldParams = true) {
         const newUrl = this.toUrl(path, params, clearOldParams);
-        if (newUrl.href == location.href) {
+        if (newUrl.href === location.href) {
             return;
         }
         history.replaceState(null, null, newUrl);
