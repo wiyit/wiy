@@ -767,7 +767,9 @@ class Component extends EventTarget {
         } else {
             element.setAttribute('uuid', this._uuid);
             Object.entries(this._config.listeners || {}).forEach(([name, value]) => {
-                element.addEventListener(name, value);
+                value.forEach(listener => {
+                    element.addEventListener(name, listener);
+                });
             });
 
             const root = element.attachShadow({ mode: 'open' });
@@ -975,6 +977,25 @@ class Component extends EventTarget {
                 }
             }, node, attrValue);
         };
+        const bindData = async (attrName, attrValue, callback) => {
+            await processCommand('wiy:data', attrName, attrValue, async (key, value, firstObserve) => {
+                if (firstObserve && _.isUndefined(value)) {//首次赋值时，值未定义，则忽略
+                    return;
+                }
+                await callback(key, value);
+            });
+        };
+        const assignValue = (expression, value) => {
+            expression = `${expression}=__newValue__`;
+            let ast;
+            try {
+                ast = parseAst(expression);
+            } catch (e) { }
+            ast && this.renderValue(expression, [
+                ...extraContexts,
+                { __newValue__: value, }
+            ]);
+        };
 
         const componentConfig = this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName];
         const listeners = {};
@@ -992,7 +1013,6 @@ class Component extends EventTarget {
                             handler(e);
                         }
                     };
-                    node.addEventListener(eventType, eventHandler);
                     listeners[eventType] = [
                         ...(listeners[eventType] || []),
                         eventHandler,
@@ -1034,24 +1054,9 @@ class Component extends EventTarget {
                         continue;
                     }
 
-                    const assignValue = (expression, value) => {
-                        expression = `${expression}=__newValue__`;
-                        let ast;
-                        try {
-                            ast = parseAst(expression);
-                        } catch (e) { }
-                        ast && this.renderValue(expression, [
-                            ...extraContexts,
-                            { __newValue__: value, }
-                        ]);
-                    };
-
                     if (componentConfig) {//组件
                         dataBinders.push(async (component) => {
-                            await processCommand('wiy:data', attrName, attrValue, (key, value, firstObserve) => {
-                                if (firstObserve && _.isUndefined(value)) {//首次赋值时，值未定义，不向组件赋值
-                                    return;
-                                }
+                            await bindData(attrName, attrValue, (key, value) => {
                                 component[key] = value;
                             });
                         });
@@ -1078,18 +1083,23 @@ class Component extends EventTarget {
                         ];
                     } else {//普通标签
                         if (bindAttrName) {//必须绑定具体属性
-                            await processCommand('wiy:data', attrName, attrValue, (key, value) => {
-                                if (_.isNil(value)) {
-                                    node[key] = null;
-                                } else {
-                                    node[key] = value;
-                                }
+                            dataBinders.push(async () => {
+                                await bindData(attrName, attrValue, (key, value) => {
+                                    if (_.isNil(value)) {
+                                        node[key] = null;
+                                    } else {
+                                        node[key] = value;
+                                    }
+                                });
                             });
 
                             const eventHandler = (e) => {
                                 assignValue(attrValue, node[bindAttrName]);
                             };
-                            node.addEventListener('change', eventHandler);
+                            listeners['change'] = [
+                                eventHandler,
+                                ...(listeners['change'] || []),
+                            ];
                         }
                     }
                 }
@@ -1099,6 +1109,15 @@ class Component extends EventTarget {
         if (componentConfig) {
             return await this.renderComponent(node, extraContexts, listeners, dataBinders);
         } else {
+            Object.entries(listeners).forEach(([name, value]) => {
+                value.forEach(listener => {
+                    node.addEventListener(name, listener);
+                });
+            });
+            for (let dataBinder of dataBinders) {
+                await dataBinder();
+            }
+
             if (node.nodeName == 'SLOT') {
                 return await this.renderSlot(node, extraContexts);
             } else if (node.nodeName == 'TEMPLATE') {
