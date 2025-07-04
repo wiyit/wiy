@@ -952,6 +952,15 @@ class Component extends EventTarget {
             }
             return '';
         };
+        const toStandardName = (command, name) => {
+            switch (command) {
+                case 'wiy:attr': return _.kebabCase(name);
+                case 'wiy:class': return _.kebabCase(name);
+                case 'wiy:style': return _.kebabCase(name);
+                case 'wiy:data': return _.camelCase(name);
+                default: return name;
+            }
+        };
         const processCommand = async (command, attrName, attrValue, callback) => {
             const bindAttrName = getCommandBindAttrName(command, attrName);
             if (_.isNil(bindAttrName)) {
@@ -962,7 +971,7 @@ class Component extends EventTarget {
                 return await this.actual(this.renderValue(attrValue, extraContexts));
             }, async (result, firstObserve) => {
                 if (bindAttrName) {
-                    await callback(bindAttrName, result, firstObserve);
+                    await callback(toStandardName(command, bindAttrName), result, firstObserve);
                 } else {
                     if (_.isNil(result)) {
                         return;
@@ -971,7 +980,7 @@ class Component extends EventTarget {
                         return Object.entries(result);
                     }, async (entries, firstObserveOfEntries) => {
                         for (let [key, value] of entries) {
-                            await callback(key, value, firstObserve && firstObserveOfEntries);
+                            await callback(toStandardName(command, key), value, firstObserve && firstObserveOfEntries);
                         }
                     }, node, `Object.entries(${attrValue})`);
                 }
@@ -1046,13 +1055,18 @@ class Component extends EventTarget {
                     });
                 } else if (attrName.startsWith('wiy:style')) {
                     await processCommand('wiy:style', attrName, attrValue, (key, value) => {
-                        node.style[key] = value;
+                        if (_.isNil(value)) {
+                            node.style.removeProperty(key);
+                        } else {
+                            node.style.setProperty(key, value);
+                        }
                     });
                 } else if (attrName.startsWith('wiy:data')) {
                     const bindAttrName = getCommandBindAttrName('wiy:data', attrName);
                     if (_.isNil(bindAttrName)) {
                         continue;
                     }
+                    const key = toStandardName('wiy:data', bindAttrName);
 
                     if (componentConfig) {//组件
                         dataBinders.push(async (component) => {
@@ -1063,9 +1077,9 @@ class Component extends EventTarget {
 
                         const eventHandler = (e) => {
                             const newData = e.data;
-                            if (bindAttrName) {//绑定具体属性
-                                if (bindAttrName in newData) {//变化数据中包含该属性
-                                    assignValue(attrValue, newData[bindAttrName]);
+                            if (key) {//绑定具体属性
+                                if (key in newData) {//变化数据中包含该属性
+                                    assignValue(attrValue, newData[key]);
                                 }
                             } else {
                                 Object.entries(newData).forEach(([key, value]) => {
@@ -1082,7 +1096,7 @@ class Component extends EventTarget {
                             ...(listeners['datainit'] || []),
                         ];
                     } else {//普通标签
-                        if (bindAttrName) {//必须绑定具体属性
+                        if (key) {//必须绑定具体属性
                             dataBinders.push(async () => {
                                 await bindData(attrName, attrValue, (key, value) => {
                                     if (_.isNil(value)) {
@@ -1094,7 +1108,7 @@ class Component extends EventTarget {
                             });
 
                             const eventHandler = (e) => {
-                                assignValue(attrValue, node[bindAttrName]);
+                                assignValue(attrValue, node[key]);
                             };
                             listeners['change'] = [
                                 eventHandler,
