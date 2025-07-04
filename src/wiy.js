@@ -1049,7 +1049,7 @@ class Component extends EventTarget {
                         node.style[key] = value;
                     });
                 } else if (attrName.startsWith('wiy:data')) {
-                    let bindAttrName = getCommandBindAttrName('wiy:data', attrName);
+                    const bindAttrName = getCommandBindAttrName('wiy:data', attrName);
                     if (_.isNil(bindAttrName)) {
                         continue;
                     }
@@ -1242,8 +1242,7 @@ class Component extends EventTarget {
             }
         };
 
-        let map = {};//之前渲染好的内容map，key是数组或对象的key，value是之前该key对应的数据
-        let oldObj;
+        const map = {};//之前渲染好的内容map，key是数组或对象的key，value是之前该key对应的数据
         await this.observe(async () => {
             return await this.actual(this.renderValue(forObj, extraContexts));
         }, async (result) => {
@@ -1287,7 +1286,11 @@ class Component extends EventTarget {
                     await adjustContent(list[index]);//清除内容
                 }
 
-                oldObj = result;
+                for (let oldKey in map) {//删除原有的多余的key
+                    if (!keys.includes(oldKey)) {
+                        delete map[oldKey];
+                    }
+                }
             }, pointer, `Object.keys(${forObj})`);
         }, pointer, forObj);
 
