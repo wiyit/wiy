@@ -1164,6 +1164,7 @@ class Component extends EventTarget {
         const list = [];
 
         const varExpr = removeAttr(node, `wiy:let-${varName}`);
+        varName = _.camelCase(varName);
 
         const pointer = document.createComment('let');//指示let块的位置
         node.replaceWith(pointer);
