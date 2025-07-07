@@ -674,7 +674,7 @@ class Component extends EventTarget {
     }
 
     hasSlotTemplate(name = '') {
-        return name in this._config.slotRenderers;
+        return name in this._config.slots;
     }
 
     on(eventType, listener) {
@@ -915,14 +915,13 @@ class Component extends EventTarget {
         if (node.hasAttribute('wiy:for')) {
             return await this.renderFor(node, extraContexts);
         }
-        if (node.hasAttribute('wiy:slot')) {
-            const slot = await this.renderString(removeAttr(node, 'wiy:slot') || '', extraContexts);
+        if (node.hasAttribute('wiy:slot') || node.hasAttribute('wiy:slot.data')) {
+            const slot = this.renderString(removeAttr(node, 'wiy:slot') || '', extraContexts);
+            const dataName = this.renderString(removeAttr(node, 'wiy:slot.data') || 'slotData', extraContexts);
             node._wiySlotInfo = {
                 slot,
-                contexts: [
-                    { this: this._proxyThis },
-                    ...extraContexts,
-                ],
+                dataName,
+                contexts: extraContexts,
             };
             return node;
         }
@@ -1009,6 +1008,7 @@ class Component extends EventTarget {
         const componentConfig = this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName];
         const listeners = {};
         const dataBinders = [];
+        const slotData = tryCreateProxy({});
         for (let attrNode of Array.from(node.attributes)) {//需先转成数组，防止遍历过程中删除属性导致遍历出错
             await this.renderTextOrAttr(attrNode, extraContexts);
             const attrName = attrNode.nodeName;
@@ -1095,16 +1095,18 @@ class Component extends EventTarget {
                             eventHandler,
                             ...(listeners['datainit'] || []),
                         ];
+                    } else if (node.nodeName === 'SLOT') {
+                        await bindData(attrName, attrValue, (key, value) => {
+                            slotData[key] = value;
+                        });
                     } else {//普通标签
                         if (key) {//必须绑定具体属性
-                            dataBinders.push(async () => {
-                                await bindData(attrName, attrValue, (key, value) => {
-                                    if (_.isNil(value)) {
-                                        node[key] = null;
-                                    } else {
-                                        node[key] = value;
-                                    }
-                                });
+                            await bindData(attrName, attrValue, (key, value) => {
+                                if (_.isNil(value)) {
+                                    node[key] = null;
+                                } else {
+                                    node[key] = value;
+                                }
                             });
 
                             const eventHandler = (e) => {
@@ -1128,12 +1130,9 @@ class Component extends EventTarget {
                     node.addEventListener(name, listener);
                 });
             });
-            for (let dataBinder of dataBinders) {
-                await dataBinder();
-            }
 
             if (node.nodeName === 'SLOT') {
-                return await this.renderSlot(node, extraContexts);
+                return await this.renderSlot(node, extraContexts, slotData);
             } else if (node.nodeName === 'TEMPLATE') {
                 return await this.renderNodes(node.content.childNodes, extraContexts);
             } else {
@@ -1143,9 +1142,9 @@ class Component extends EventTarget {
         }
     }
 
-    async renderSlot(node, extraContexts = []) {
+    async renderSlot(node, extraContexts = [], slotData) {
         const slotName = node.name || '';
-        let renderers = this._config.slotRenderers[slotName];
+        let renderers = this._config.slots[slotName];
         if (!renderers) {
             renderers = [async () => {
                 await this.renderNodes(node.childNodes, extraContexts);
@@ -1153,7 +1152,7 @@ class Component extends EventTarget {
         }
         if (!renderers.executed) {
             for (let renderer of renderers) {
-                await renderer();
+                await renderer(slotData);
             }
             renderers.executed = true;
         }
@@ -1334,28 +1333,42 @@ class Component extends EventTarget {
     }
 
     async renderComponent(node, extraContexts = [], listeners, dataBinders) {
-        const slotRenderers = {};
-        const addRenderer = (slotContentNode, slot = '', contexts = extraContexts) => {
+        const slots = {};
+        const addRenderer = (slotContentNode, slot = '', dataName, contexts = extraContexts) => {
             slot && slotContentNode.setAttribute('slot', slot);
-            slotRenderers[slot] = slotRenderers[slot] || [];
-            slotRenderers[slot].push(async () => {
-                const slotContent = await this.renderNode(slotContentNode, contexts);
-                slot && toNodeList(slotContent).filter(n => {
+            slots[slot] = slots[slot] || [];
+            slots[slot].push(async (slotData) => {
+                const list = [];
+
+                const pointer = document.createComment('slot');//指示slot块的位置
+                slotContentNode.replaceWith(pointer);
+                list.push(pointer);
+
+                const content = await this.renderNode(slotContentNode, [
+                    ...contexts,
+                    { [dataName]: slotData },
+                ]);
+                slot && toNodeList(content).filter(n => {
                     return n.nodeType === Node.ELEMENT_NODE;
                 }).forEach(n => {
                     n.setAttribute('slot', slot);
                 });
+
+                await insertAfter(pointer, content);
+                list[1] = content;
+
+                return list;
             });
         };
 
         for (let childNode of Array.from(node.childNodes)) {
-            if (childNode.nodeType === Node.ELEMENT_NODE && childNode.hasAttribute('wiy:slot')) {
+            if (childNode.nodeType === Node.ELEMENT_NODE && (childNode.hasAttribute('wiy:slot') || childNode.hasAttribute('wiy:slot.data'))) {
                 const content = await this.renderElement(childNode, extraContexts);
                 toNodeList(content).filter(n => {
                     return n.nodeType === Node.ELEMENT_NODE;
                 }).forEach(slotContentNode => {
-                    const { slot, contexts, } = slotContentNode._wiySlotInfo;
-                    addRenderer(slotContentNode, slot, contexts);
+                    const { slot, dataName, contexts, } = slotContentNode._wiySlotInfo;
+                    addRenderer(slotContentNode, slot, dataName, contexts);
                 });
             }
         }
@@ -1370,7 +1383,7 @@ class Component extends EventTarget {
             const config = {
                 listeners,
                 dataBinders,
-                slotRenderers,
+                slots,
                 app: this._config.app,
             };
             const component = new Component({
