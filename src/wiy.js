@@ -917,7 +917,7 @@ class Component extends EventTarget {
         }
         if (node.hasAttribute('wiy:slot') || node.hasAttribute('wiy:slot.data')) {
             const slot = this.renderString(removeAttr(node, 'wiy:slot') || '', extraContexts);
-            const dataName = this.renderString(removeAttr(node, 'wiy:slot.data') || 'slotData', extraContexts);
+            const dataName = this.renderString(removeAttr(node, 'wiy:slot.data') || '', extraContexts);
             node._wiySlotInfo = {
                 slot,
                 dataName,
@@ -1334,7 +1334,7 @@ class Component extends EventTarget {
 
     async renderComponent(node, extraContexts = [], listeners, dataBinders) {
         const slots = {};
-        const addRenderer = (slotContentNode, slot = '', dataName, contexts = extraContexts) => {
+        const addRenderer = (slotContentNode, slot = '', dataName = 'slotData', contexts = extraContexts) => {
             slot && slotContentNode.setAttribute('slot', slot);
             slots[slot] = slots[slot] || [];
             slots[slot].push(async (slotData) => {
