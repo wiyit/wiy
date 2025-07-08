@@ -1345,7 +1345,7 @@ class Component extends EventTarget {
 
     async renderComponent(node, extraContexts = [], listeners, dataBinders) {
         const slots = {};
-        const addRenderer = (slotContentNode, slot = '', dataName = 'slotData', contexts = extraContexts) => {
+        const addRenderer = (slotContentNode, slot = '', dataName, contexts = extraContexts) => {
             slot && slotContentNode.setAttribute('slot', slot);
             slots[slot] = slots[slot] || [];
             slots[slot].push(async (slotData) => {
@@ -1357,7 +1357,7 @@ class Component extends EventTarget {
 
                 const content = await this.renderNode(slotContentNode, [
                     ...contexts,
-                    { [dataName]: slotData },
+                    { [dataName || 'slotData']: slotData },
                 ]);
                 slot && toNodeList(content).filter(n => {
                     return n.nodeType === Node.ELEMENT_NODE;
