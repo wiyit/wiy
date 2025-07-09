@@ -1548,10 +1548,9 @@ class App extends EventTarget {
         const currentPage = await new Promise(async (resolve) => {
             const showPage = async (page) => {
                 if (this._currentPage) {
-                    await this._currentPage.destroy();
+                    await this._currentPage.remove();
                 }
 
-                this._config.container.innerHTML = '';
                 const element = page._oldElement || document.createElement('wiy-page');
                 this._config.container.appendChild(element);
                 await page.mount(element);
