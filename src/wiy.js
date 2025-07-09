@@ -623,7 +623,7 @@ class Component extends EventTarget {
         this._config.components = this._config.components || {};
 
         Object.entries(this._config.components).forEach(([name, value]) => {
-            this._config.components[name.toUpperCase()] = value;
+            this._config.components[_.kebabCase(name)] = value;
         });
         Object.entries(this._config.methods || {}).forEach(([name, value]) => {
             Object.defineProperty(this, name, {
@@ -702,6 +702,13 @@ class Component extends EventTarget {
         return this.getElement(id)?._wiyComponent || [...this._children].find(child => {
             return child._element?.id === id;
         });
+    }
+
+    getComponentConfig(name) {
+        if (!name) {
+            return this._config;
+        }
+        return this._config.components[_.kebabCase(name)] || this._config.app.getComponentConfig(name);
     }
 
     getParent() {
@@ -1010,7 +1017,7 @@ class Component extends EventTarget {
             ]);
         };
 
-        const componentConfig = this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName];
+        const componentConfig = this.getComponentConfig(node.nodeName);
         const listeners = {};
         const dataBinders = [];
         const slotData = tryCreateProxy({});
@@ -1390,7 +1397,7 @@ class Component extends EventTarget {
         });
 
         await new Promise(async (resolve) => {
-            const define = await loadComponentDefine(this._config.components[node.nodeName] || this._config.app._config.components[node.nodeName]);
+            const define = await loadComponentDefine(this.getComponentConfig(node.nodeName));
             const config = {
                 listeners,
                 dataBinders,
@@ -1521,6 +1528,10 @@ class App extends EventTarget {
         return this._router;
     }
 
+    getComponentConfig(name) {
+        return this._config.components[_.kebabCase(name)];
+    }
+
     on(eventType, listener) {
         this._rawThis.addEventListener(eventType, listener);
     }
@@ -1561,7 +1572,7 @@ class App extends EventTarget {
     }
 
     registerComponent(name, component) {
-        this._config.components[name.toUpperCase()] = component;
+        this._config.components[_.kebabCase(name)] = component;
     }
 
     registerComponents(components) {
