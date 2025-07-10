@@ -1292,11 +1292,13 @@ class Component extends EventTarget {
 
                     const { oldValue, oldContent } = map[key] = map[key] || {};
 
-                    const localContext = tryCreateProxy({});
+                    const localContext = tryCreateProxy({
+                        index: index - 1,
+                        [keyName]: key,
+                    });
                     const newValue = await this.observe(async () => {
                         return await this.actual(result[key]);//这一行是为了观察obj中该key对应的value的变化，这样的话当该key对应的value变化时才能被通知
                     }, (value) => {
-                        localContext[keyName] = key;
                         localContext[valueName] = value;
                         return map[key].oldValue = localContext[valueName];//记录响应式结果
                     }, pointer, `${forObj}[${key}]`);
