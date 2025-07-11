@@ -711,6 +711,13 @@ class Component extends EventTarget {
         return this._config.components[_.kebabCase(name)] || this._config.app.getComponentConfig(name);
     }
 
+    getTemplate(id) {
+        const element = this.getElement(id);
+        if (element?.nodeName === "TEMPLATE") {
+            return element.innerHTML;
+        }
+    }
+
     getParent() {
         return this._parent;
     }
@@ -1040,6 +1047,8 @@ class Component extends EventTarget {
                         ...(listeners[eventType] || []),
                         eventHandler,
                     ];
+                } else if (attrName === 'wiy:template') {
+                    node.innerHTML = this.getTemplate(attrValue);
                 } else if (attrName === 'wiy:html') {
                     await this.observe(async () => {
                         return await this.actual(this.renderValue(attrValue, extraContexts));
@@ -1154,6 +1163,9 @@ class Component extends EventTarget {
             if (node.nodeName === 'SLOT') {
                 return await this.renderSlot(node, extraContexts, slotData);
             } else if (node.nodeName === 'TEMPLATE') {
+                if (node.id) {
+                    return node;
+                }
                 return await this.renderNodes(node.content.childNodes, extraContexts);
             } else {
                 await this.renderNodes(node.childNodes, extraContexts);
