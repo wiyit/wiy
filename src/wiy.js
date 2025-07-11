@@ -1238,6 +1238,7 @@ class Component extends EventTarget {
         const list = [];
 
         const forObj = removeAttr(node, 'wiy:for');
+        const indexName = removeAttr(node, 'wiy:for.index') || 'index';
         const keyName = removeAttr(node, 'wiy:for.key') || 'key';
         const valueName = removeAttr(node, 'wiy:for.value') || 'value';
 
@@ -1299,7 +1300,7 @@ class Component extends EventTarget {
                     const { oldValue, oldContent } = map[key] = map[key] || {};
 
                     const localContext = tryCreateProxy({
-                        index: index - 1,
+                        [indexName]: index - 1,
                         [keyName]: key,
                     });
                     const newValue = await this.observe(async () => {
