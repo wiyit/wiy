@@ -894,7 +894,9 @@ class Component extends EventTarget {
             component: this,
             destroyWithNode,
         });
-        return await startObserve();
+        return await startObserve().catch((e) => {
+            console.error(info, '\n', e);
+        });
     }
 
     async renderTextOrAttr(node, extraContexts = []) {
@@ -1278,6 +1280,10 @@ class Component extends EventTarget {
         await this.observe(async () => {
             return await this.actual(this.renderValue(forObj, extraContexts));
         }, async (result) => {
+            if (_.isNil(result)) {
+                return;
+            }
+
             const isArray = Array.isArray(result);
 
             await this.observe(() => {
