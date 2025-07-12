@@ -506,7 +506,7 @@ const replaceWith = async (node, obj, needDestroy = true) => {
     }
 };
 const insertAfter = async (node, obj) => {
-    const temp = document.createComment('');
+    const temp = document.createTextNode('');
     insertNodeAfter(temp, node);
     await replaceWith(temp, obj);
 };
@@ -923,13 +923,13 @@ class Component extends EventTarget {
             return attrNode.nodeName.startsWith('wiy:let-');
         });
         if (letAttrNode) {
-            return await this.renderLet(node, extraContexts, letAttrNode.nodeName.slice(8));
+            return await this.renderWiyLet(node, extraContexts, letAttrNode.nodeName.slice(8));
         }
         if (node.hasAttribute('wiy:if')) {
-            return await this.renderIf(node, extraContexts);
+            return await this.renderWiyIf(node, extraContexts);
         }
         if (node.hasAttribute('wiy:for')) {
-            return await this.renderFor(node, extraContexts);
+            return await this.renderWiyFor(node, extraContexts);
         }
         if (node.hasAttribute('wiy:slot') || node.hasAttribute('wiy:slot.data')) {
             const slot = this.renderString(removeAttr(node, 'wiy:slot') || '', extraContexts);
@@ -1163,15 +1163,30 @@ class Component extends EventTarget {
             if (node.nodeName === 'SLOT') {
                 return await this.renderSlot(node, extraContexts, slotData);
             } else if (node.nodeName === 'TEMPLATE') {
-                if (node.id) {
-                    return node;
-                }
-                return await this.renderNodes(node.content.childNodes, extraContexts);
+                return await this.renderTemplate(node, extraContexts);
             } else {
                 await this.renderNodes(node.childNodes, extraContexts);
                 return node;
             }
         }
+    }
+
+    async renderTemplate(node, extraContexts = []) {
+        if (node.id) {
+            return node;
+        }
+
+        const list = [];
+
+        const pointer = document.createTextNode('');//指示template块的位置
+        node.replaceWith(pointer);
+        list.push(pointer);
+
+        const content = await this.renderNodes(node.content.childNodes, extraContexts);
+        await insertAfter(pointer, content);
+        list[1] = content;
+
+        return list;
     }
 
     async renderSlot(node, extraContexts = [], slotData) {
@@ -1191,13 +1206,13 @@ class Component extends EventTarget {
         return node;
     }
 
-    async renderLet(node, extraContexts = [], varName) {
+    async renderWiyLet(node, extraContexts = [], varName) {
         const list = [];
 
         const varExpr = removeAttr(node, `wiy:let-${varName}`);
         varName = _.camelCase(varName);
 
-        const pointer = document.createComment('let');//指示let块的位置
+        const pointer = document.createTextNode('');//指示let块的位置
         node.replaceWith(pointer);
         list.push(pointer);
 
@@ -1218,12 +1233,12 @@ class Component extends EventTarget {
         return list;
     }
 
-    async renderIf(node, extraContexts = []) {
+    async renderWiyIf(node, extraContexts = []) {
         const list = [];
 
         const condition = removeAttr(node, 'wiy:if');
 
-        const pointer = document.createComment('if');//指示if块的位置
+        const pointer = document.createTextNode('');//指示if块的位置
         node.replaceWith(pointer);
         list.push(pointer);
 
@@ -1246,7 +1261,7 @@ class Component extends EventTarget {
         return list;
     }
 
-    async renderFor(node, extraContexts = []) {
+    async renderWiyFor(node, extraContexts = []) {
         const list = [];
 
         const forObj = removeAttr(node, 'wiy:for');
@@ -1254,7 +1269,7 @@ class Component extends EventTarget {
         const keyName = removeAttr(node, 'wiy:for.key') || 'key';
         const valueName = removeAttr(node, 'wiy:for.value') || 'value';
 
-        const pointer = document.createComment('for');//指示for块的位置
+        const pointer = document.createTextNode('');//指示for块的位置
         node.replaceWith(pointer);
         list.push(pointer);
 
@@ -1379,7 +1394,7 @@ class Component extends EventTarget {
             slots[slot].push(async (slotData) => {
                 const list = [];
 
-                const pointer = document.createComment('slot');//指示slot块的位置
+                const pointer = document.createTextNode('');//指示slot块的位置
                 slotContentNode.replaceWith(pointer);
                 list.push(pointer);
 
