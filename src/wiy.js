@@ -64,6 +64,12 @@ const insertNodeBefore = (nodeToInsert, node) => {
 const insertNodeAfter = (nodeToInsert, node) => {
     node.nextSibling ? insertNodeBefore(nodeToInsert, node.nextSibling) : node.parentNode ? node.parentNode.appendChild(nodeToInsert) : void 0;
 };
+const cloneNode = (node, deep) => {
+    const clonedNode = node.cloneNode(deep);
+    node._wiyComponent && (clonedNode._wiyComponent = node._wiyComponent);
+    node._wiySlots && (clonedNode._wiySlots = node._wiySlots);
+    return clonedNode;
+};
 const loadComponentDefine = async (component) => {
     //component应该是一个组件的定义对象，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个组件的定义对象
     if (component instanceof Promise) {
@@ -674,7 +680,7 @@ class Component extends EventTarget {
     }
 
     hasSlotTemplate(name = '') {
-        return name in this._config.slots;
+        return !!this._config.slots[name]?.assigned;
     }
 
     on(eventType, listener) {
@@ -932,14 +938,7 @@ class Component extends EventTarget {
             return await this.renderWiyFor(node, extraContexts);
         }
         if (node.hasAttribute('wiy:slot') || node.hasAttribute('wiy:slot.data')) {
-            const slot = this.renderString(removeAttr(node, 'wiy:slot') || '', extraContexts);
-            const dataName = this.renderString(removeAttr(node, 'wiy:slot.data') || '', extraContexts);
-            node._wiySlotInfo = {
-                slot,
-                dataName,
-                contexts: extraContexts,
-            };
-            return node;
+            return await this.renderWiySlot(node, extraContexts);
         }
 
         const getCommandBindAttrName = (command, attrName) => {
@@ -1191,18 +1190,23 @@ class Component extends EventTarget {
 
     async renderSlot(node, extraContexts = [], slotData) {
         const slotName = node.name || '';
-        let renderers = this._config.slots[slotName];
-        if (!renderers) {
-            renderers = [async () => {
+
+        const slots = this._config.slots;
+
+        let slotInfo = slots[slotName] || {};
+        slots[slotName] = slotInfo;
+        slotInfo = slots[slotName];//获取响应式对象
+        slotInfo.active = true;
+        slotInfo.data = slotData;
+
+        await this.observe(() => {
+            return !!slotInfo.assigned;
+        }, async (assigned) => {
+            if (!assigned) {
                 await this.renderNodes(node.childNodes, extraContexts);
-            }];
-        }
-        if (!renderers.executed) {
-            for (let renderer of renderers) {
-                await renderer(slotData);
             }
-            renderers.executed = true;
-        }
+        }, node, `${slotName} assigned`);
+
         return node;
     }
 
@@ -1212,7 +1216,7 @@ class Component extends EventTarget {
         const varExpr = removeAttr(node, `wiy:let-${varName}`);
         varName = _.camelCase(varName);
 
-        const pointer = document.createTextNode('');//指示let块的位置
+        const pointer = document.createTextNode('');//指示wiy:let块的位置
         node.replaceWith(pointer);
         list.push(pointer);
 
@@ -1238,7 +1242,7 @@ class Component extends EventTarget {
 
         const condition = removeAttr(node, 'wiy:if');
 
-        const pointer = document.createTextNode('');//指示if块的位置
+        const pointer = document.createTextNode('');//指示wiy:if块的位置
         node.replaceWith(pointer);
         list.push(pointer);
 
@@ -1250,7 +1254,7 @@ class Component extends EventTarget {
             }
 
             if (result) {//需要渲染
-                const content = await this.renderElement(node.cloneNode(true), extraContexts);
+                const content = await this.renderElement(cloneNode(node, true), extraContexts);
                 await insertAfter(pointer, content);
                 list[1] = content;
             } else {//不需要渲染
@@ -1269,7 +1273,7 @@ class Component extends EventTarget {
         const keyName = removeAttr(node, 'wiy:for.key') || 'key';
         const valueName = removeAttr(node, 'wiy:for.value') || 'value';
 
-        const pointer = document.createTextNode('');//指示for块的位置
+        const pointer = document.createTextNode('');//指示wiy:for块的位置
         node.replaceWith(pointer);
         list.push(pointer);
 
@@ -1342,7 +1346,7 @@ class Component extends EventTarget {
                         continue;
                     }
 
-                    const newContent = await this.renderElement(node.cloneNode(true), [
+                    const newContent = await this.renderElement(cloneNode(node, true), [
                         ...extraContexts,
                         localContext,
                     ]);
@@ -1361,6 +1365,58 @@ class Component extends EventTarget {
                 }
             }, pointer, `Object.keys(${forObj})`);
         }, pointer, forObj);
+
+        return list;
+    }
+
+    async renderWiySlot(node, extraContexts = []) {
+        const list = [];
+
+        let slot;
+        let dataName;
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            slot = removeAttr(node, 'wiy:slot');
+            dataName = removeAttr(node, 'wiy:slot.data');
+        }
+        slot = slot || '';
+        dataName = dataName || 'slotData';
+
+        const slots = node._wiySlots;
+
+        const pointer = document.createTextNode('');//指示wiy:slot块的位置
+        node.replaceWith(pointer);
+        list.push(pointer);
+
+        await this.observe(() => {
+            return this.renderString(slot, extraContexts);
+        }, async (slotName) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                node.setAttribute('slot', slotName);
+            }
+            let slotInfo = slots[slotName] || {};
+            slots[slotName] = slotInfo;
+            slotInfo = slots[slotName];//获取响应式对象
+            slotInfo.assigned = true;
+
+            await this.observe(() => {
+                return !!slotInfo.active;
+            }, async (active) => {
+                if (list[1]) {//有旧内容
+                    await remove(list[1]);//移除旧内容
+                }
+
+                if (active) {//需要渲染
+                    const content = await this.renderNode(cloneNode(node, true), [
+                        ...extraContexts,
+                        { [dataName]: slotInfo.data },
+                    ]);
+                    await insertAfter(pointer, content);
+                    list[1] = content;
+                } else {//不需要渲染
+                    list[1] = null;
+                }
+            }, pointer, `${slotName} active`);
+        }, pointer, slot);
 
         return list;
     }
@@ -1387,50 +1443,16 @@ class Component extends EventTarget {
     }
 
     async renderComponent(node, extraContexts = [], listeners, dataBinders) {
-        const slots = {};
-        const addRenderer = (slotContentNode, slot = '', dataName, contexts = extraContexts) => {
-            slot && slotContentNode.setAttribute('slot', slot);
-            slots[slot] = slots[slot] || [];
-            slots[slot].push(async (slotData) => {
-                const list = [];
-
-                const pointer = document.createTextNode('');//指示slot块的位置
-                slotContentNode.replaceWith(pointer);
-                list.push(pointer);
-
-                const content = await this.renderNode(slotContentNode, [
-                    ...contexts,
-                    { [dataName || 'slotData']: slotData },
-                ]);
-                slot && toNodeList(content).filter(n => {
-                    return n.nodeType === Node.ELEMENT_NODE;
-                }).forEach(n => {
-                    n.setAttribute('slot', slot);
-                });
-
-                await insertAfter(pointer, content);
-                list[1] = content;
-
-                return list;
-            });
-        };
+        const slots = tryCreateProxy({});
 
         for (let childNode of Array.from(node.childNodes)) {
-            if (childNode.nodeType === Node.ELEMENT_NODE && (childNode.hasAttribute('wiy:slot') || childNode.hasAttribute('wiy:slot.data'))) {
-                const content = await this.renderElement(childNode, extraContexts);
-                toNodeList(content).filter(n => {
-                    return n.nodeType === Node.ELEMENT_NODE;
-                }).forEach(slotContentNode => {
-                    const { slot, dataName, contexts, } = slotContentNode._wiySlotInfo;
-                    addRenderer(slotContentNode, slot, dataName, contexts);
-                });
+            childNode._wiySlots = slots;
+            if (childNode.nodeType === Node.ELEMENT_NODE) {
+                await this.renderElement(childNode, extraContexts);
+            } else {
+                await this.renderWiySlot(childNode, extraContexts);
             }
         }
-        Array.from(node.childNodes).filter(n => {
-            return n.nodeType != Node.ELEMENT_NODE || !n.hasAttribute('slot');
-        }).forEach(slotContentNode => {
-            addRenderer(slotContentNode);
-        });
 
         await new Promise(async (resolve) => {
             const define = await loadComponentDefine(this.getComponentConfig(node.nodeName));
