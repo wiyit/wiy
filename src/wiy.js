@@ -907,9 +907,7 @@ class Component extends EventTarget {
             component: this,
             destroyWithNode,
         });
-        return await startObserve().catch((e) => {
-            console.error(info, '\n', e);
-        });
+        return await startObserve();
     }
 
     async renderTextOrAttr(node, extraContexts = []) {
