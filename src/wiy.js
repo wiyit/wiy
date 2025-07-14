@@ -1388,9 +1388,6 @@ class Component extends EventTarget {
         await this.observe(() => {
             return this.renderString(slot, extraContexts);
         }, async (slotName) => {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-                node.setAttribute('slot', slotName);
-            }
             let slotInfo = slots[slotName] || {};
             slots[slotName] = slotInfo;
             slotInfo = slots[slotName];//获取响应式对象
@@ -1408,6 +1405,11 @@ class Component extends EventTarget {
                         ...extraContexts,
                         { [dataName]: slotInfo.data },
                     ]);
+                    toNodeList(content).forEach(node => {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            node.setAttribute('slot', slotName);
+                        }
+                    });
                     await insertAfter(pointer, content);
                     list[1] = content;
                 } else {//不需要渲染
