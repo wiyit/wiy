@@ -1603,21 +1603,22 @@ class App extends EventTarget {
             throw new Error(`未找到页面${info.path}`);
         }
 
-        const currentPage = await new Promise(async (resolve) => {
+        await new Promise(async (resolve) => {
             const showPage = async (page) => {
                 if (this._currentPage) {
                     await this._currentPage.remove();
                 }
+                this._currentPage = page;
 
                 const element = page._oldElement || document.createElement('wiy-page');
                 this._config.container.appendChild(element);
                 await page.mount(element);
-                resolve(page);
+                resolve();
             };
 
             const define = await loadComponentDefine(this._config.pages[info.path] || this._config.pages[this._config.index]);
             if (define._uuid === this._currentPage?._config._uuid) {
-                resolve(this._currentPage);
+                resolve();
             } else {
                 const page = this.newComponent(define);
                 page.on('init', () => {
@@ -1625,7 +1626,6 @@ class App extends EventTarget {
                 });
             }
         });
-        this._currentPage = currentPage;
     }
 
     registerComponent(name, component) {
