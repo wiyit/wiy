@@ -71,6 +71,9 @@ const cloneNode = (node, deep) => {
     return clonedNode;
 };
 const loadComponentDefine = async (component) => {
+    if (_.isFunction(component)) {//如果component是一个函数，则执行这个函数，得到返回结果
+        component = component();
+    }
     //component应该是一个组件的定义对象，或者一个import()语句返回的Promise，Promise返回的是一个Module，里面的default应该是Module导出的默认内容，应该是一个组件的定义对象
     if (component instanceof Promise) {
         component = (await component).default;
