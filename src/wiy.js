@@ -904,13 +904,15 @@ class Component extends EventTarget {
         const observer = new Observer({
             callback: async (notifier) => {
                 OBSERVER_MANAGER.delete(observer);
+                await firstObservePromise;
                 await startObserve(notifier);
             },
             info,
             component: this,
             destroyWithNode,
         });
-        return await startObserve();
+        const firstObservePromise = startObserve();
+        return await firstObservePromise;
     }
 
     async renderTextOrAttr(node, extraContexts = []) {
