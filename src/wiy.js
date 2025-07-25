@@ -623,7 +623,7 @@ class Component extends EventTarget {
 
     async executeLifecycle(name, data) {
         const lifecycleFunction = (this._config.lifecycle || {})[name];
-        lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)(data));
+        lifecycleFunction && await lifecycleFunction.bind(this._proxyThis)(data);
         this.trigger(name.toLowerCase(), data);
     }
 
@@ -1463,23 +1463,20 @@ class Component extends EventTarget {
             }
         }
 
-        await new Promise(async (resolve) => {
-            const define = await loadComponentDefine(this.getComponentConfig(node.nodeName));
-            const config = {
-                listeners,
-                dataBinders,
-                slots,
-                app: this._config.app,
-            };
-            const component = new Component({
-                ...define,
-                ...config,
-            });
-            this.addChild(component);
-            component.on('init', async () => {
-                await component.mount(node);
-                resolve(component);
-            });
+        const define = await loadComponentDefine(this.getComponentConfig(node.nodeName));
+        const component = new Component({
+            ...define,
+            listeners,
+            dataBinders,
+            slots,
+            app: this._config.app,
+        });
+        this.addChild(component);
+
+        node.style.setProperty('visibility', 'hidden');
+        component.on('init', async () => {
+            await component.mount(node);
+            node.style.removeProperty('visibility');
         });
 
         return node;
@@ -1535,7 +1532,7 @@ class App extends EventTarget {
 
     async executeLifecycle(name, data) {
         const lifecycleFunction = (this._config.lifecycle || {})[name];
-        lifecycleFunction && await Promise.resolve(lifecycleFunction.bind(this._proxyThis)(data));
+        lifecycleFunction && await lifecycleFunction.bind(this._proxyThis)(data);
         this.trigger(name.toLowerCase(), data);
     }
 
