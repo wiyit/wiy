@@ -1322,7 +1322,7 @@ class Component extends EventTarget {
             return await this.actual(this.renderValue(forObj, extraContexts));
         }, async (result) => {
             if (_.isNil(result)) {
-                return;
+                result = [];
             }
 
             const isArray = Array.isArray(result);
