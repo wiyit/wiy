@@ -831,10 +831,6 @@ class Component extends EventTarget {
     }
 
     async unmount() {
-        if (!this._element) {
-            throw new Error(`${this._uuid}未挂载，无法卸载`);
-        }
-
         await this.executeLifecycle('beforeUnmount');
 
         OBSERVER_MANAGER.pause(this);//暂停观察
@@ -848,9 +844,11 @@ class Component extends EventTarget {
 
         this._parent?.removeChild(this);//解除父子组件关联
 
-        //解除element与组件关联
-        this._element._wiyComponent = null;
-        this._element = null;
+        if (this._element) {
+            //解除element与组件关联
+            this._element._wiyComponent = null;
+            this._element = null;
+        }
 
         await this.executeLifecycle('unmount', {
             element: this._oldElement,
