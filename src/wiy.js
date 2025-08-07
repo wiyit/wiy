@@ -694,8 +694,11 @@ class Component extends EventTarget {
         this._rawThis.dispatchEvent(new WiyEvent(eventType, data, cause));
     }
 
-    onEventPath(e) {
+    onEventPath(e, element) {
         return e.composedPath().some(node => {
+            if (element) {
+                return node === element;
+            }
             return node === this || node._rawThis === this._rawThis || node === this._element;
         });
     }
