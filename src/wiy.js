@@ -270,34 +270,37 @@ class ObserverManager {
     }
 
     pause(component) {
-        this._map.forEach((temp, target) => {
-            temp.forEach((observers, prop) => {
-                observers.forEach(observer => {
-                    if (observer.getComponent()._rawThis === component._rawThis) {
-                        observer.pause();
-                    }
-                });
-            });
-        });
-    }
-
-    continue(component) {
-        this._map.forEach((temp, target) => {
-            temp.forEach((observers, prop) => {
-                observers.forEach(observer => {
-                    if (observer.getComponent()._rawThis === component._rawThis) {
-                        observer.continue();
-                    }
-                });
-            });
-        });
-    }
-
-    destroyByComponent(component) {
+        const proxyComponent = component._proxyThis;
         for (let [target, temp] of this._map) {
             for (let [prop, observers] of temp) {
                 for (let observer of observers) {
-                    if (observer.getComponent()._rawThis === component._rawThis) {
+                    if (observer.getComponent() === proxyComponent) {
+                        observer.pause();
+                    }
+                }
+            }
+        }
+    }
+
+    continue(component) {
+        const proxyComponent = component._proxyThis;
+        for (let [target, temp] of this._map) {
+            for (let [prop, observers] of temp) {
+                for (let observer of observers) {
+                    if (observer.getComponent() === proxyComponent) {
+                        observer.continue();
+                    }
+                }
+            }
+        }
+    }
+
+    destroyByComponent(component) {
+        const proxyComponent = component._proxyThis;
+        for (let [target, temp] of this._map) {
+            for (let [prop, observers] of temp) {
+                for (let observer of observers) {
+                    if (observer.getComponent() === proxyComponent) {
                         observer.destroy();
                         observers.delete(observer);
                     }
@@ -406,6 +409,7 @@ class Observer {
 const isProxyObj = (obj) => {
     return _.isObject(obj) && !!obj._proxyUuid;
 };
+const proxyIgnoreProperties = new Set(['_proxyUuid', '_rawThis', '_proxyThis']);
 const tryCreateProxy = (obj) => {
     if (!_.isObject(obj) || isProxyObj(obj) || obj instanceof Date || obj instanceof Node || obj instanceof Function || obj instanceof Promise) {
         return obj;
@@ -413,22 +417,26 @@ const tryCreateProxy = (obj) => {
     const proxyObj = new Proxy(obj, {
         has(target, prop) {
             const has = Reflect.has(target, prop);
-            const propDesc = Reflect.getOwnPropertyDescriptor(target, prop);
-            if (!has || propDesc?.writable) {
-                OBSERVER_MANAGER.observe(target, prop);
+            if (!proxyIgnoreProperties.has(prop)) {
+                const propDesc = Reflect.getOwnPropertyDescriptor(target, prop);
+                if (!has || propDesc?.writable) {
+                    OBSERVER_MANAGER.observe(target, prop);
+                }
             }
             return has;
         },
         get(target, prop) {
-            const has = Reflect.has(target, prop);
             let value = Reflect.get(target, prop);
-            const propDesc = Reflect.getOwnPropertyDescriptor(target, prop);
-            if (!has || propDesc?.writable) {
-                value = tryCreateProxy(value);
-                if (isProxyObj(value)) {
-                    Reflect.set(target, prop, value);
+            if (!proxyIgnoreProperties.has(prop)) {
+                const has = Reflect.has(target, prop);
+                const propDesc = Reflect.getOwnPropertyDescriptor(target, prop);
+                if (!has || propDesc?.writable) {
+                    value = tryCreateProxy(value);
+                    if (isProxyObj(value)) {
+                        Reflect.set(target, prop, value);
+                    }
+                    OBSERVER_MANAGER.observe(target, prop);
                 }
-                OBSERVER_MANAGER.observe(target, prop);
             }
             return value;
         },
