@@ -197,22 +197,38 @@ class ObserverManager {
                 if (!this._stack.isEmpty()) {
                     break;
                 }
-                const item = this._queue.dequeue();
-                if (!item.observer.isActive()) {
+                const { observer, notifier } = this._queue.dequeue();
+                if (!observer.isActive()) {
                     continue;
                 }
+                observer._status = 'pause';
                 try {
-                    await item.observer.process(item.notifier);
+                    await observer.process(notifier);
                 } catch (e) {
-                    console.error(e, item);
+                    console.error(e, observer, notifier);
                 }
             }
             setTimeout(update, 0);
         };
-        update();
+        setTimeout(update, 0);
+
+        const clear = () => {
+            for (let [target, temp] of this._map) {
+                for (let [prop, observers] of temp) {
+                    for (let observer of observers) {
+                        observer.needDestroy() && observers.delete(observer);
+                    }
+                    observers.size === 0 && temp.delete(prop);
+                }
+                temp.size === 0 && this._map.delete(target);
+            }
+            window.requestIdleCallback(clear);
+        };
+        window.requestIdleCallback(clear);
     }
 
     push(observer) {
+        observer._status = 'active';
         this._stack.push(observer);
     }
 
@@ -256,84 +272,15 @@ class ObserverManager {
         Array.from(observers).sort((a, b) => {
             return a._uuid - b._uuid;
         }).forEach(observer => {
-            if (observer.isActive()) {
-                this._queue.enqueue({
-                    observer,
-                    notifier: {
-                        target,
-                        prop,
-                        propsChanged,
-                    },
-                });
-            }
+            this._queue.enqueue({
+                observer,
+                notifier: {
+                    target,
+                    prop,
+                    propsChanged,
+                },
+            });
         });
-    }
-
-    pause(component) {
-        const proxyComponent = component._proxyThis;
-        for (let [target, temp] of this._map) {
-            for (let [prop, observers] of temp) {
-                for (let observer of observers) {
-                    if (observer.getComponent() === proxyComponent) {
-                        observer.pause();
-                    }
-                }
-            }
-        }
-    }
-
-    continue(component) {
-        const proxyComponent = component._proxyThis;
-        for (let [target, temp] of this._map) {
-            for (let [prop, observers] of temp) {
-                for (let observer of observers) {
-                    if (observer.getComponent() === proxyComponent) {
-                        observer.continue();
-                    }
-                }
-            }
-        }
-    }
-
-    destroyByComponent(component) {
-        const proxyComponent = component._proxyThis;
-        for (let [target, temp] of this._map) {
-            for (let [prop, observers] of temp) {
-                for (let observer of observers) {
-                    if (observer.getComponent() === proxyComponent) {
-                        observer.destroy();
-                        observers.delete(observer);
-                    }
-                }
-                observers.size === 0 && temp.delete(prop);
-            }
-            temp.size === 0 && this._map.delete(target);
-        }
-    }
-
-    destroyByNodes(nodes) {
-        for (let [target, temp] of this._map) {
-            for (let [prop, observers] of temp) {
-                for (let observer of observers) {
-                    if (nodes.has(observer.getDestroyWithNode())) {
-                        observer.destroy();
-                        observers.delete(observer);
-                    }
-                }
-                observers.size === 0 && temp.delete(prop);
-            }
-            temp.size === 0 && this._map.delete(target);
-        }
-    }
-
-    delete(observer) {
-        for (let [target, temp] of this._map) {
-            for (let [prop, observers] of temp) {
-                observers.delete(observer);
-                observers.size === 0 && temp.delete(prop);
-            }
-            temp.size === 0 && this._map.delete(target);
-        }
     }
 }
 class Observer {
@@ -361,7 +308,7 @@ class Observer {
                 writable: false,
                 configurable: false,
                 enumerable: false,
-                value: config.component._proxyThis,
+                value: config.component._rawThis,
             },
             _destroyWithNode: {
                 writable: false,
@@ -382,28 +329,12 @@ class Observer {
         await this._callback(notifier);
     }
 
-    getComponent() {
-        return this._component;
-    }
-
-    getDestroyWithNode() {
-        return this._destroyWithNode;
-    }
-
-    pause() {
-        this._status = 'pause';
-    }
-
-    continue() {
-        this._status = 'active';
-    }
-
-    destroy() {
-        this._status = 'destroy';
+    needDestroy() {
+        return this._status === 'destroy' || this._destroyWithNode?._wiyObserverStatus === 'destroy' || this._component?._observerStatus === 'destroy';
     }
 
     isActive() {
-        return this._status === 'active';
+        return this._status === 'active' && this._destroyWithNode?._wiyObserverStatus !== 'destroy' && this._component?._observerStatus === 'active';
     }
 }
 const isProxyObj = (obj) => {
@@ -517,9 +448,9 @@ const collectToDestroyNodes = (obj, toDestroyNodes) => {
 const destroy = async (obj) => {
     const toDestroyNodes = new Set();
     collectToDestroyNodes(obj, toDestroyNodes);
-    OBSERVER_MANAGER.destroyByNodes(toDestroyNodes);//终止观察
 
     for (let node of toDestroyNodes) {
+        node._wiyObserverStatus = 'destroy';//终止观察
         await node._wiyComponent?.destroy();
     }
 };
@@ -630,6 +561,12 @@ class Component extends EventTarget {
                 configurable: false,
                 enumerable: false,
                 value: new Set(),//需要注意内存泄漏
+            },
+            _observerStatus: {
+                writable: true,
+                configurable: false,
+                enumerable: false,
+                value: 'active',
             },
         });
 
@@ -806,7 +743,7 @@ class Component extends EventTarget {
             this._oldParent = null;
             this._oldChildren.clear();
 
-            OBSERVER_MANAGER.continue(this);//继续观察
+            this._observerStatus = 'active';//继续观察
         } else {
             element.setAttribute('uuid', this._uuid);
             Object.entries(this._config.listeners || {}).forEach(([name, value]) => {
@@ -853,7 +790,7 @@ class Component extends EventTarget {
     async unmount() {
         await this.executeLifecycle('beforeUnmount');
 
-        OBSERVER_MANAGER.pause(this);//暂停观察
+        this._observerStatus = 'pause';//暂停观察
 
         this._oldElement = this._element;
         this._oldParent = this._parent;
@@ -884,7 +821,7 @@ class Component extends EventTarget {
 
         await this.executeLifecycle('beforeDestroy');
 
-        OBSERVER_MANAGER.destroyByComponent(this);//终止观察
+        this._observerStatus = 'destroy';//终止观察
 
         for (let child of this._oldChildren) {
             await child.destroy();
@@ -925,7 +862,6 @@ class Component extends EventTarget {
         };
         const observer = new Observer({
             callback: async (notifier) => {
-                OBSERVER_MANAGER.delete(observer);
                 await firstObservePromise;
                 await startObserve(notifier);
             },
