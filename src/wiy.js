@@ -207,9 +207,9 @@ class ObserverManager {
                     console.error(e, item);
                 }
             }
-            window.requestAnimationFrame(update);
+            setTimeout(update, 0);
         };
-        window.requestAnimationFrame(update);
+        update();
     }
 
     push(observer) {
