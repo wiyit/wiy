@@ -879,6 +879,10 @@ class Component extends EventTarget {
             await child.destroy();
         }
 
+        this._oldElement = null;
+        this._oldParent = null;
+        this._oldChildren.clear();
+
         await this.executeLifecycle('destroy');
     }
 
