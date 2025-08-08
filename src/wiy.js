@@ -294,37 +294,43 @@ class ObserverManager {
     }
 
     destroyByComponent(component) {
-        this._map.forEach((temp, target) => {
-            temp.forEach((observers, prop) => {
-                observers.forEach(observer => {
+        for (let [target, temp] of this._map) {
+            for (let [prop, observers] of temp) {
+                for (let observer of observers) {
                     if (observer.getComponent()._rawThis === component._rawThis) {
                         observer.destroy();
                         observers.delete(observer);
                     }
-                });
-            });
-        });
+                }
+                observers.size === 0 && temp.delete(prop);
+            }
+            temp.size === 0 && this._map.delete(target);
+        }
     }
 
     destroyByNode(node) {
-        this._map.forEach((temp, target) => {
-            temp.forEach((observers, prop) => {
-                observers.forEach(observer => {
+        for (let [target, temp] of this._map) {
+            for (let [prop, observers] of temp) {
+                for (let observer of observers) {
                     if (observer.getDestroyWithNode() === node) {
                         observer.destroy();
                         observers.delete(observer);
                     }
-                });
-            });
-        });
+                }
+                observers.size === 0 && temp.delete(prop);
+            }
+            temp.size === 0 && this._map.delete(target);
+        }
     }
 
     delete(observer) {
-        this._map.forEach((temp, target) => {
-            temp.forEach((observers, prop) => {
+        for (let [target, temp] of this._map) {
+            for (let [prop, observers] of temp) {
                 observers.delete(observer);
-            });
-        });
+                observers.size === 0 && temp.delete(prop);
+            }
+            temp.size === 0 && this._map.delete(target);
+        }
     }
 }
 class Observer {
