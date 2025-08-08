@@ -644,6 +644,10 @@ class Component extends EventTarget {
         this._rawThis.addEventListener(eventType, listener);
     }
 
+    off(eventType, listener) {
+        this._rawThis.removeEventListener(eventType, listener);
+    }
+
     trigger(eventType, data, cause) {
         this._rawThis.dispatchEvent(new WiyEvent(eventType, data, cause));
     }
