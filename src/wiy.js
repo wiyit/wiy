@@ -311,11 +311,11 @@ class ObserverManager {
         }
     }
 
-    destroyByNode(node) {
+    destroyByNodes(nodes) {
         for (let [target, temp] of this._map) {
             for (let [prop, observers] of temp) {
                 for (let observer of observers) {
-                    if (observer.getDestroyWithNode() === node) {
+                    if (nodes.has(observer.getDestroyWithNode())) {
                         observer.destroy();
                         observers.delete(observer);
                     }
@@ -496,28 +496,31 @@ const OBSERVER_MANAGER = new ObserverManager();
 
 
 
-const destroy = async (obj) => {
+const collectToDestroyNodes = (obj, toDestroyNodes) => {
     if (obj instanceof Node) {
         switch (obj.nodeType) {
             case Node.DOCUMENT_FRAGMENT_NODE:
-                for (let childNode of Array.from(obj.childNodes)) {
-                    await destroy(childNode);
-                }
-                break;
             case Node.ELEMENT_NODE:
                 for (let childNode of Array.from(obj.childNodes)) {
-                    await destroy(childNode);
+                    collectToDestroyNodes(childNode, toDestroyNodes);
                 }
-                await obj._wiyComponent?.destroy();
                 break;
         }
-        OBSERVER_MANAGER.destroyByNode(obj);//终止观察
-        return;
+        toDestroyNodes.add(obj);
+    } else {
+        const nodeList = toNodeList(obj);
+        for (let node of nodeList) {
+            collectToDestroyNodes(node, toDestroyNodes);
+        }
     }
+};
+const destroy = async (obj) => {
+    const toDestroyNodes = new Set();
+    collectToDestroyNodes(obj, toDestroyNodes);
+    OBSERVER_MANAGER.destroyByNodes(toDestroyNodes);//终止观察
 
-    const nodeList = toNodeList(obj);
-    for (let node of nodeList) {
-        await destroy(node);
+    for (let node of toDestroyNodes) {
+        await node._wiyComponent?.destroy();
     }
 };
 const replaceWith = async (node, obj, needDestroy = true) => {
