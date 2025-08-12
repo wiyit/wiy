@@ -340,34 +340,35 @@ class Observer {
 const isProxyObj = (obj) => {
     return _.isObject(obj) && !!obj._proxyUuid;
 };
-const proxyIgnoreProperties = new Set(['_proxyUuid', '_rawThis', '_proxyThis']);
+const proxyIgnoreProperties = new Set(['_proxyUuid', '_rawThis', '_proxyThis', '_proxyIgnoreProps']);
 const tryCreateProxy = (obj) => {
-    if (!_.isObject(obj) || isProxyObj(obj) || obj instanceof Date || obj instanceof Node || obj instanceof Function || obj instanceof Promise) {
+    if (!_.isObject(obj) || obj instanceof Date || obj instanceof Node || obj instanceof Function || obj instanceof Promise) {
         return obj;
     }
+    if (isProxyObj(obj)) {
+        return obj._proxyThis;
+    }
+    const proxyIgnoreProps = obj._proxyIgnoreProps;
+    const proxyIgnore = (prop) => {
+        return proxyIgnoreProperties.has(prop) || (proxyIgnoreProps && proxyIgnoreProps.has(prop));
+    };
     const proxyObj = new Proxy(obj, {
         has(target, prop) {
             const has = Reflect.has(target, prop);
-            if (!proxyIgnoreProperties.has(prop)) {
-                const propDesc = Reflect.getOwnPropertyDescriptor(target, prop);
-                if (!has || propDesc?.writable) {
-                    OBSERVER_MANAGER.observe(target, prop);
-                }
+            if (!proxyIgnore(prop)) {
+                OBSERVER_MANAGER.observe(target, prop);
             }
             return has;
         },
         get(target, prop) {
             let value = Reflect.get(target, prop);
-            if (!proxyIgnoreProperties.has(prop)) {
-                const has = Reflect.has(target, prop);
-                const propDesc = Reflect.getOwnPropertyDescriptor(target, prop);
-                if (!has || propDesc?.writable) {
-                    value = tryCreateProxy(value);
-                    if (isProxyObj(value)) {
-                        Reflect.set(target, prop, value);
-                    }
-                    OBSERVER_MANAGER.observe(target, prop);
+            if (!proxyIgnore(prop)) {
+                const newValue = tryCreateProxy(value);
+                if (newValue !== value) {
+                    Reflect.set(target, prop, newValue);
+                    value = newValue;
                 }
+                OBSERVER_MANAGER.observe(target, prop);
             }
             return value;
         },
@@ -377,27 +378,30 @@ const tryCreateProxy = (obj) => {
             return result;
         },
         set(target, prop, value) {//如果加了receiver，就会和defineProperty重复触发
-            const propsChanged = !Reflect.has(target, prop);
-            const oldValue = Reflect.get(target, prop);
-            const propDesc = Reflect.getOwnPropertyDescriptor(target, prop);
-            if (propDesc?.writable) {
+            if (!proxyIgnore(prop)) {
+                const propsChanged = !Reflect.has(target, prop);
+                const oldValue = Reflect.get(target, prop);
                 value = tryCreateProxy(value);
+                if (propsChanged || value !== oldValue
+                    || (Array.isArray(target) && prop === 'length')) {
+                    OBSERVER_MANAGER.notify(target, prop, propsChanged);
+                }
             }
             const result = Reflect.set(target, prop, value);
-            if (propsChanged || value != oldValue
-                || (Array.isArray(target) && prop === 'length')) {
-                OBSERVER_MANAGER.notify(target, prop, propsChanged);
-            }
             return result;
         },
         deleteProperty(target, prop) {
             const result = Reflect.deleteProperty(target, prop);
-            OBSERVER_MANAGER.notify(target, prop, true);
+            if (!proxyIgnore(prop)) {
+                OBSERVER_MANAGER.notify(target, prop, true);
+            }
             return result;
         },
         defineProperty(target, prop, attributes) {
             const result = Reflect.defineProperty(target, prop, attributes);
-            OBSERVER_MANAGER.notify(target, prop, true);
+            if (!proxyIgnore(prop)) {
+                OBSERVER_MANAGER.notify(target, prop, true);
+            }
             return result;
         },
     });
@@ -725,7 +729,7 @@ class Component extends EventTarget {
         if (this._element) {
             throw new Error(`${this._uuid}已挂载，无法重复挂载`);
         }
-        if (this._oldElement && this._oldElement != element) {
+        if (this._oldElement && this._oldElement !== element) {
             throw new Error(`${this._uuid}无法切换挂载`);
         }
 
@@ -912,7 +916,7 @@ class Component extends EventTarget {
             const prefix = `${command}-`;
             if (attrName.startsWith(prefix)) {
                 return attrName.slice(prefix.length);
-            } else if (attrName != command) {
+            } else if (attrName !== command) {
                 return;
             }
 
@@ -1259,7 +1263,7 @@ class Component extends EventTarget {
             }
 
             if (oldContent && oldIndex >= 0) {//在for块中
-                await remove(oldContent, oldContent != newContent);
+                await remove(oldContent, oldContent !== newContent);
                 list[oldIndex] = null;
             }
 
@@ -1308,6 +1312,7 @@ class Component extends EventTarget {
                     const localContext = tryCreateProxy({
                         [indexName]: index - 1,
                         [keyName]: key,
+                        _proxyIgnoreProps: new Set([indexName, keyName]),
                     });
                     const newValue = await this.observe(async () => {
                         return await this.actual(result[key]);//这一行是为了观察obj中该key对应的value的变化，这样的话当该key对应的value变化时才能被通知
@@ -1459,6 +1464,25 @@ class Component extends EventTarget {
         ]);
     }
 }
+Object.defineProperties(Component.prototype, {
+    _proxyIgnoreProps: {
+        writable: false,
+        configurable: false,
+        enumerable: false,
+        value: new Set([
+            '_uuid',
+            '_config',
+            '_element',
+            '_parent',
+            '_children',
+            '_oldElement',
+            '_oldParent',
+            '_oldChildren',
+            '_observerStatus',
+            ...Object.getOwnPropertyNames(Component.prototype),
+        ]),
+    },
+});
 
 class App extends EventTarget {
     constructor(config = {}) {
@@ -1627,6 +1651,20 @@ class App extends EventTarget {
         });
     }
 }
+Object.defineProperties(App.prototype, {
+    _proxyIgnoreProps: {
+        writable: false,
+        configurable: false,
+        enumerable: false,
+        value: new Set([
+            '_uuid',
+            '_config',
+            '_currentPage',
+            '_router',
+            ...Object.getOwnPropertyNames(App.prototype),
+        ]),
+    },
+});
 
 class Router extends EventTarget {
     constructor(config = {}) {
