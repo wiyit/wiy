@@ -1153,7 +1153,11 @@ class Component extends EventTarget {
         node.replaceWith(pointer);
         list.push(pointer);
 
-        list[1] = await this.renderNodes(node.content.childNodes, extraContexts);
+        const childNodes = node.content.childNodes;
+        for (const childNode of childNodes) {
+            childNode._wiySlots = node._wiySlots;
+        }
+        list[1] = await this.renderNodes(childNodes, extraContexts);
         await insertAfter(pointer, list[1]);
 
         return list;
