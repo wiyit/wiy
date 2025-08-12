@@ -355,7 +355,7 @@ const propIgnored = (target, prop) => {
 const proxyIgnoreProperties = new Set(['this', '_proxyUuid', '_rawThis', '_proxyThis', '_proxyIgnoreProps']);
 const tryCreateProxy = (obj) => {
     if (obj?._proxyUuid) {
-        return obj._proxyThis;
+        return obj;
     }
     if (!_.isObject(obj) || obj instanceof Date || obj instanceof Node || obj instanceof Function || obj instanceof Promise) {
         return obj;
