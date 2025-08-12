@@ -213,9 +213,9 @@ class ObserverManager {
         setTimeout(update, 0);
 
         const clear = () => {
-            for (let [target, temp] of this._map) {
-                for (let [prop, observers] of temp) {
-                    for (let observer of observers) {
+            for (const [target, temp] of this._map) {
+                for (const [prop, observers] of temp) {
+                    for (const observer of observers) {
                         observer.needDestroy() && observers.delete(observer);
                     }
                     observers.size === 0 && temp.delete(prop);
@@ -432,7 +432,7 @@ const collectToDestroyNodes = (obj, toDestroyNodes) => {
         switch (obj.nodeType) {
             case Node.DOCUMENT_FRAGMENT_NODE:
             case Node.ELEMENT_NODE:
-                for (let childNode of Array.from(obj.childNodes)) {
+                for (const childNode of Array.from(obj.childNodes)) {
                     collectToDestroyNodes(childNode, toDestroyNodes);
                 }
                 break;
@@ -440,7 +440,7 @@ const collectToDestroyNodes = (obj, toDestroyNodes) => {
         toDestroyNodes.add(obj);
     } else {
         const nodeList = toNodeList(obj);
-        for (let node of nodeList) {
+        for (const node of nodeList) {
             collectToDestroyNodes(node, toDestroyNodes);
         }
     }
@@ -449,7 +449,7 @@ const destroy = async (obj) => {
     const toDestroyNodes = new Set();
     collectToDestroyNodes(obj, toDestroyNodes);
 
-    for (let node of toDestroyNodes) {
+    for (const node of toDestroyNodes) {
         node._wiyObserverStatus = 'destroy';//终止观察
         await node._wiyComponent?.destroy();
     }
@@ -480,11 +480,11 @@ const toNodeList = (obj) => {
         return [obj];
     } else {
         const list = [];
-        for (let item of obj) {
+        for (const item of obj) {
             if (_.isNil(item)) {
                 continue;
             }
-            for (let node of toNodeList(item)) {
+            for (const node of toNodeList(item)) {
                 list.push(node);
             }
         }
@@ -608,7 +608,7 @@ class Component extends EventTarget {
         Object.entries(data || {}).forEach(([name, value]) => {
             this[name] = value;
         });
-        for (let dataBinder of (this._config.dataBinders || [])) {
+        for (const dataBinder of (this._config.dataBinders || [])) {
             await dataBinder(this._proxyThis);
         }
         await this.executeLifecycle('init');
@@ -739,7 +739,7 @@ class Component extends EventTarget {
 
         if (this._oldElement) {
             this._oldParent?.addChild(this);//将父子组件相互关联
-            for (let child of this._oldChildren) {//挂载所有子组件
+            for (const child of this._oldChildren) {//挂载所有子组件
                 await child.mount(child._oldElement);
             }
 
@@ -798,7 +798,7 @@ class Component extends EventTarget {
 
         this._oldElement = this._element;
         this._oldParent = this._parent;
-        for (let child of this._children) {
+        for (const child of this._children) {
             await child.unmount();
             this._oldChildren.add(child);
         }
@@ -827,7 +827,7 @@ class Component extends EventTarget {
 
         this._observerStatus = 'destroy';//终止观察
 
-        for (let child of this._oldChildren) {
+        for (const child of this._oldChildren) {
             await child.destroy();
         }
 
@@ -890,19 +890,21 @@ class Component extends EventTarget {
     }
 
     async renderElement(node, extraContexts = []) {
-        const letAttrNode = Array.from(node.attributes).find((attrNode) => {
-            return attrNode.nodeName.startsWith('wiy:let-');
-        });
-        if (letAttrNode) {
-            return await this.renderWiyLet(node, extraContexts, letAttrNode.nodeName.slice(8));
+        const attrs = {};
+        for (const attrNode of node.attributes) {
+            const attrName = attrNode.nodeName;
+            if (attrName.startsWith('wiy:let-')) {
+                return await this.renderWiyLet(node, extraContexts, attrName.slice(8));
+            }
+            attrs[attrName] = attrNode;
         }
-        if (node.hasAttribute('wiy:if')) {
+        if ('wiy:if' in attrs) {
             return await this.renderWiyIf(node, extraContexts);
         }
-        if (node.hasAttribute('wiy:for')) {
+        if ('wiy:for' in attrs) {
             return await this.renderWiyFor(node, extraContexts);
         }
-        if (node.hasAttribute('wiy:slot') || node.hasAttribute('wiy:slot.data')) {
+        if ('wiy:slot' in attrs || 'wiy:slot.data' in attrs) {
             return await this.renderWiySlot(node, extraContexts);
         }
 
@@ -915,7 +917,7 @@ class Component extends EventTarget {
             }
 
             if (command === 'wiy:data') {
-                switch (node.nodeName) {//部分表单标签在不指定绑定属性时，有默认绑定属性
+                switch (nodeName) {//部分表单标签在不指定绑定属性时，有默认绑定属性
                     case 'INPUT':
                         switch (node.getAttribute('type')) {
                             case 'checkbox':
@@ -963,7 +965,7 @@ class Component extends EventTarget {
                     await this.observe(() => {
                         return Object.entries(result);
                     }, async (entries, firstObserveOfEntries) => {
-                        for (let [key, value] of entries) {
+                        for (const [key, value] of entries) {
                             await callback(toStandardName(command, key), value, firstObserve && firstObserveOfEntries);
                         }
                     }, node, `Object.entries(${attrValue})`);
@@ -990,13 +992,15 @@ class Component extends EventTarget {
             ]);
         };
 
-        const componentConfig = this.getComponentConfig(node.nodeName);
+        const nodeName = node.nodeName;
+        const isSlot = nodeName === 'SLOT';
+        const componentConfig = this.getComponentConfig(nodeName);
         const listeners = {};
         const dataBinders = [];
-        const slotData = tryCreateProxy({});
-        for (let attrNode of Array.from(node.attributes)) {//需先转成数组，防止遍历过程中删除属性导致遍历出错
+        const slotData = isSlot ? tryCreateProxy({}) : null;
+        for (const attrName in attrs) {
+            const attrNode = attrs[attrName];
             await this.renderTextOrAttr(attrNode, extraContexts);
-            const attrName = attrNode.nodeName;
             if (attrName.startsWith('wiy:')) {
                 const attrValue = removeAttr(node, attrName);
                 if (attrName.startsWith('wiy:on')) {
@@ -1081,7 +1085,7 @@ class Component extends EventTarget {
                             eventHandler,
                             ...(listeners['datainit'] || []),
                         ];
-                    } else if (node.nodeName === 'SLOT') {
+                    } else if (isSlot) {
                         await bindData(attrName, attrValue, (key, value) => {
                             slotData[key] = value;
                         });
@@ -1105,7 +1109,7 @@ class Component extends EventTarget {
                         }
                     }
                 } else if (attrName.startsWith('wiy:method')) {
-                    if (node.nodeName === 'SLOT') {
+                    if (isSlot) {
                         await processCommand('wiy:method', attrName, attrValue, (key, value) => {
                             slotData[key] = value;
                         });
@@ -1123,9 +1127,9 @@ class Component extends EventTarget {
                 });
             });
 
-            if (node.nodeName === 'SLOT') {
+            if (isSlot) {
                 return await this.renderSlot(node, extraContexts, slotData);
-            } else if (node.nodeName === 'TEMPLATE') {
+            } else if (nodeName === 'TEMPLATE') {
                 return await this.renderTemplate(node, extraContexts);
             } else {
                 await this.renderNodes(node.childNodes, extraContexts);
@@ -1329,7 +1333,7 @@ class Component extends EventTarget {
                     await adjustContent(list[index]);//清除内容
                 }
 
-                for (let oldKey in map) {//删除原有的多余的key
+                for (const oldKey in map) {//删除原有的多余的key
                     if (!keys.includes(oldKey)) {
                         delete map[oldKey];
                     }
@@ -1394,7 +1398,7 @@ class Component extends EventTarget {
 
     async renderNodes(nodes, extraContexts = []) {
         const list = [];
-        for (let node of Array.from(nodes)) {
+        for (const node of Array.from(nodes)) {
             list.push(await this.renderNode(node, extraContexts));
         }
         return list;
@@ -1416,7 +1420,7 @@ class Component extends EventTarget {
     async renderComponent(node, extraContexts = [], listeners, dataBinders) {
         const slots = tryCreateProxy({});
 
-        for (let childNode of Array.from(node.childNodes)) {
+        for (const childNode of Array.from(node.childNodes)) {
             childNode._wiySlots = slots;
             if (childNode.nodeType === Node.ELEMENT_NODE) {
                 await this.renderElement(childNode, extraContexts);
@@ -1528,7 +1532,7 @@ class App extends EventTarget {
             document.head.appendChild(style);
         }
 
-        for (let plugin of (this._config.plugins || [])) {
+        for (const plugin of (this._config.plugins || [])) {
             const define = await loadPluginDefine(plugin);
             await define.install(this._proxyThis);
         }
