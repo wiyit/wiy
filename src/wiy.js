@@ -1388,9 +1388,16 @@ class Component extends EventTarget {
                 }
 
                 if (active) {//需要渲染
+                    const localContext = tryCreateProxy({});
+                    await this.observe(() => {
+                        return slotInfo.data;//观察插槽数据变化
+                    }, (slotData) => {
+                        localContext[dataName] = slotData;
+                    });
+
                     list[1] = await this.renderNode(cloneNode(node, true), [
                         ...extraContexts,
-                        { [dataName]: slotInfo.data },
+                        localContext,
                     ]);
                     toNodeList(list[1]).forEach(node => {
                         if (node.nodeType === Node.ELEMENT_NODE) {
