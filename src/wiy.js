@@ -104,19 +104,27 @@ class Queue {
                 enumerable: false,
                 value: [],
             },
+            _set: {
+                writable: false,
+                configurable: false,
+                enumerable: false,
+                value: new Set(),
+            },
         });
     }
 
-    enqueue(element) {
-        this._items.push(element);
+    enqueue(item) {
+        if (this._set.has(item.observer)) {
+            return;
+        }
+        this._items.push(item);
+        this._set.add(item.observer);
     }
 
     dequeue() {
-        return this._items.shift();
-    }
-
-    peek() {
-        return this._items[0];
+        const item = this._items.shift();
+        this._set.delete(item.observer);
+        return item;
     }
 
     size() {
@@ -145,10 +153,6 @@ class Stack {
 
     pop() {
         return this._items.pop();
-    }
-
-    peek() {
-        return this._items[this.size() - 1];
     }
 
     size() {
