@@ -114,11 +114,17 @@ class Queue {
     }
 
     enqueue(item) {
-        if (this._set.has(item.observer)) {
-            return;
+        const items = this._items;
+        const set = this._set;
+        const observer = item.observer;
+        if (set.has(observer)) {
+            items.splice(_.findIndex(items, i => {
+                return i.observer === observer;
+            }), 1);
+            items.push(item);
         }
-        this._items.push(item);
-        this._set.add(item.observer);
+        items.push(item);
+        set.add(observer);
     }
 
     dequeue() {
