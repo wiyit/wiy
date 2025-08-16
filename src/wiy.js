@@ -1292,13 +1292,33 @@ class Component extends EventTarget {
         node.replaceWith(pointer);
         list.push(pointer);
 
-        const adjustContents = async (oldContents, newContents) => {
-            if (oldContents) {
-                for (const oldContent of oldContents) {
-                    await remove(oldContent, !newContents.includes(oldContent));
+        const adjustContents = async (oldContents = [], newContents) => {
+            const oldSet = new Set(oldContents);
+            const newSet = new Set(newContents);
+            const toRemoveContents = oldContents.filter(content => !newSet.has(content));
+            if (toRemoveContents.length) {
+                await remove(toRemoveContents);
+            }
+
+            let prevContent = pointer;
+            let toInsertFragments = [];
+            for (const content of newContents) {
+                if (oldSet.has(content)) {//遇到复用内容
+                    if (toInsertFragments.length) {
+                        const lastNode = toNodeList(prevContent).slice(-1)[0];
+                        await insertAfter(lastNode, toInsertFragments);//插入待插入的片段
+                        toInsertFragments = [];
+                    }
+                    prevContent = content;
+                } else {
+                    toInsertFragments.push(content);
                 }
             }
-            await insertAfter(pointer, newContents);
+            //插入剩余片段
+            if (toInsertFragments.length) {
+                const lastNode = toNodeList(prevContent).slice(-1)[0];
+                await insertAfter(lastNode, toInsertFragments);//插入待插入的片段
+            }
         };
 
         const map = new Map();//之前渲染好的内容map，key是数组或对象的id，value是之前该id对应的数据
