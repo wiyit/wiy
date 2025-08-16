@@ -1284,43 +1284,24 @@ class Component extends EventTarget {
         const indexName = removeAttr(node, 'wiy:for.index') || 'index';
         const keyName = removeAttr(node, 'wiy:for.key') || 'key';
         const valueName = removeAttr(node, 'wiy:for.value') || 'value';
+        const idGetter = (await this.renderValue(removeAttr(node, 'wiy:for.id'), extraContexts)) || ((value, key) => {
+            return key;
+        });
 
         const pointer = document.createTextNode('');//指示wiy:for块的位置
         node.replaceWith(pointer);
         list.push(pointer);
 
-        const adjustContent = async (oldContent, newContent, index) => {
-            const oldIndex = list.indexOf(oldContent);
-            if (oldIndex === index && oldContent === newContent) {//位置没变，内容没变
-                return;
-            }
-
-            if (oldContent && oldIndex >= 0) {//在for块中
-                await remove(oldContent, oldContent !== newContent);
-                list[oldIndex] = null;
-            }
-
-            if (newContent) {
-                let prevIndex = index - 1;
-                while (prevIndex >= 0) {
-                    const prevContent = list[prevIndex];//前一项的内容
-                    if (prevContent) {
-                        const nodeList = toNodeList(prevContent);
-                        for (let i = nodeList.length - 1; i >= 0; i--) {//找到最后一个在dom中的节点
-                            const node = nodeList[i];
-                            if (node.parentNode === pointer.parentNode || node.isConnected) {//节点没有被移除
-                                await insertAfter(node, newContent);
-                                list[index] = newContent;
-                                return;
-                            }
-                        }
-                    }
-                    prevIndex--;
+        const adjustContents = async (oldContents, newContents) => {
+            if (oldContents) {
+                for (const oldContent of oldContents) {
+                    await remove(oldContent, !newContents.includes(oldContent));
                 }
             }
+            await insertAfter(pointer, newContents);
         };
 
-        const map = {};//之前渲染好的内容map，key是数组或对象的key，value是之前该key对应的数据
+        const map = new Map();//之前渲染好的内容map，key是数组或对象的id，value是之前该id对应的数据
         await this.observe(async () => {
             return await this.actual(this.renderValue(forObj, extraContexts));
         }, async (result) => {
@@ -1333,49 +1314,53 @@ class Component extends EventTarget {
             await this.observe(() => {
                 return Object.keys(result);
             }, async (keys) => {
-                let index = 0;
-                for (let key of keys) {
-                    index++;
-                    if (isArray) {
-                        key = parseInt(key);
-                    }
+                const contents = [];
+                const ids = new Set();
+                for (let i = 0, max = keys.length; i < max; i++) {
+                    const index = i;
+                    const key = isArray ? parseInt(keys[i]) : keys[i];
 
-                    const { oldValue, oldContent } = map[key] = map[key] || {};
-
-                    const localContext = tryCreateProxy({
-                        [indexName]: index - 1,
-                        [keyName]: key,
-                        _proxyIgnoreProps: new Set([indexName, keyName]),
-                    });
-                    const newValue = await this.observe(async () => {
+                    const cache = await this.observe(async () => {
                         return await this.actual(result[key]);//这一行是为了观察obj中该key对应的value的变化，这样的话当该key对应的value变化时才能被通知
                     }, (value) => {
+                        const id = idGetter(value, key);
+                        const cache = map.get(id) || {
+                            id,
+                            localContext: tryCreateProxy({}),
+                        };
+                        map.set(id, cache);
+                        const { localContext } = cache;
+                        localContext[indexName] = index;
+                        localContext[keyName] = key;
                         localContext[valueName] = value;
-                        return map[key].oldValue = localContext[valueName];//记录响应式结果
+                        return cache;
                     }, pointer, `${forObj}[${key}]`);
 
-                    if (newValue === oldValue && oldContent) {//该key对应的value没变，并且有之前渲染好的内容
-                        await adjustContent(oldContent, oldContent, index);//只需要调节内容位置
-                        continue;
-                    }
-
-                    const newContent = await this.renderElement(cloneNode(node, true), [
-                        ...extraContexts,
+                    let {
+                        id,
                         localContext,
-                    ]);
-                    await adjustContent(oldContent, newContent, index);//更新内容
-                    map[key].oldContent = newContent;//记录渲染好的内容
-                }
-                while (index < list.length - 1) {//后续index上原有的内容需要清除
-                    index++;
-                    await adjustContent(list[index]);//清除内容
+                        content,
+                    } = cache;
+                    ids.add(id);
+
+                    if (!content) {//没有之前渲染好的内容
+                        content = await this.renderElement(cloneNode(node, true), [
+                            ...extraContexts,
+                            localContext,
+                        ]);
+                        cache.content = content;//缓存内容
+                    }
+                    contents.push(content);
                 }
 
-                for (const oldKey in map) {//删除原有的多余的key
-                    if (!keys.includes(oldKey)) {
-                        delete map[oldKey];
+                for (const [id] of map) {//删除原有的多余的id
+                    if (!ids.has(id)) {
+                        map.delete(id);
                     }
                 }
+
+                await adjustContents(list[1], contents);
+                list[1] = contents;
             }, pointer, `Object.keys(${forObj})`);
         }, pointer, forObj);
 
