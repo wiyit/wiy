@@ -886,7 +886,14 @@ class Component extends EventTarget {
         await replaceContent(this._element);
     }
 
-    async observe(func, callback, destroyWithNode, info) {
+    async observe(func, callback, destroyWithNode, info, throttle = 0) {
+        let throttledCallback = callback;
+        if (throttle > 0) {
+            throttledCallback = _.throttle(callback, throttle, {
+                leading: true,
+                trailing: true,
+            });
+        }
         let firstObserve = true;
         let oldResult;
         const startObserve = async (notifier) => {
@@ -905,7 +912,7 @@ class Component extends EventTarget {
                 return;
             }
 
-            const callbackResult = await callback(result, firstObserve, notifier);
+            const callbackResult = await throttledCallback(result, firstObserve, notifier);
             firstObserve = false;
             oldResult = result;
             return callbackResult;
