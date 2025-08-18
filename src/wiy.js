@@ -52,17 +52,12 @@ const renderValueInContexts = (expression, contexts = []) => {
 	`);
     return renderFunction.apply(thisObj, paramValues);
 };
-const nodesToDocumentFragment = (nodes) => {
-    return Array.from(nodes).reduce((fragment, node) => {
-        fragment.appendChild(node);
-        return fragment;
-    }, document.createDocumentFragment());
-};
-const insertNodeBefore = (nodeToInsert, node) => {
-    node.parentNode.insertBefore(nodeToInsert, node);
-};
 const insertNodeAfter = (nodeToInsert, node) => {
-    node.nextSibling ? insertNodeBefore(nodeToInsert, node.nextSibling) : node.parentNode ? node.parentNode.appendChild(nodeToInsert) : void 0;
+    if (node.nextSibling) {
+        node.parentNode.insertBefore(nodeToInsert, node.nextSibling);
+    } else if (node.parentNode) {
+        node.parentNode.appendChild(nodeToInsert);
+    }
 };
 const cloneNode = (node, deep) => {
     const clonedNode = node.cloneNode(deep);
@@ -458,70 +453,88 @@ const OBSERVER_MANAGER = new ObserverManager();
 
 
 
-const collectToDestroyNodes = (obj, toDestroyNodes) => {
-    if (obj instanceof Node) {
-        switch (obj.nodeType) {
-            case Node.DOCUMENT_FRAGMENT_NODE:
-            case Node.ELEMENT_NODE:
-                for (const childNode of Array.from(obj.childNodes)) {
-                    collectToDestroyNodes(childNode, toDestroyNodes);
-                }
-                break;
-        }
-        toDestroyNodes.add(obj);
-    } else {
-        const nodeList = toNodeList(obj);
-        for (const node of nodeList) {
-            collectToDestroyNodes(node, toDestroyNodes);
+const replaceContents = async (oldContents = [], newContents = [], pointer) => {
+    const oldSet = new Set(oldContents);
+    const newSet = new Set(newContents);
+    const toRemoveContents = [];
+    for (const content of oldContents) {
+        if (!newSet.has(content)) {
+            toRemoveContents.push(content);
         }
     }
-};
-const destroy = async (obj) => {
-    const toDestroyNodes = new Set();
-    collectToDestroyNodes(obj, toDestroyNodes);
 
-    for (const node of toDestroyNodes) {
-        node._wiyObserverStatus = 'destroy';//终止观察
-        await node._wiyComponent?.destroy();
+    if (toRemoveContents.length) {
+        const toDestroyNodes = [];
+        traverseNodes(toRemoveContents, node => {
+            node._wiyObserverStatus = 'destroy';//终止观察
+            toDestroyNodes.push(node);
+        }, true);
+        for (const node of toDestroyNodes) {
+            await node._wiyComponent?.destroy();
+        }
     }
-};
-const replaceWith = async (node, obj, needDestroy = true) => {
-    needDestroy && await destroy(node);
-    if (obj instanceof Node) {
-        node.replaceWith(obj);
-    } else {
-        node.replaceWith(nodesToDocumentFragment(toNodeList(obj)));
-    }
-};
-const insertAfter = async (node, obj) => {
-    const temp = document.createTextNode('');
-    insertNodeAfter(temp, node);
-    await replaceWith(temp, obj);
-};
-const remove = async (obj, needDestroy = true) => {
-    needDestroy && await destroy(obj);
-    if (obj instanceof Node) {
-        obj.remove();
-    } else {
-        nodesToDocumentFragment(toNodeList(obj));
-    }
-};
-const toNodeList = (obj) => {
-    if (obj instanceof Node) {
-        return [obj];
-    } else {
-        const list = [];
-        for (const item of obj) {
-            if (_.isNil(item)) {
-                continue;
+
+    traverseNodes(toRemoveContents, node => {
+        node.remove();
+    });
+
+    let prevContent = pointer;
+    let toInsertFragment = document.createDocumentFragment();
+    for (const content of newContents) {
+        if (oldSet.has(content)) {//遇到复用内容
+            if (toInsertFragment.childNodes.length) {
+                insertNodeAfter(toInsertFragment, getLastNode(prevContent));//插入待插入的片段
             }
-            for (const node of toNodeList(item)) {
-                list.push(node);
+            prevContent = content;
+        } else {
+            traverseNodes(content, node => {
+                toInsertFragment.appendChild(node);
+            });
+        }
+    }
+    //插入剩余片段
+    if (toInsertFragment.childNodes.length) {
+        insertNodeAfter(toInsertFragment, getLastNode(prevContent));//插入待插入的片段
+    }
+};
+const replaceContent = async (oldContent, newContent, pointer) => {
+    await replaceContents([oldContent], [newContent], pointer);
+};
+const traverseNodes = (content, callback, includeDescendants = false) => {
+    if (_.isNil(content)) {
+        return;
+    }
+    if (content instanceof Node) {
+        callback(content);
+        if (includeDescendants) {
+            switch (content.nodeType) {
+                case Node.DOCUMENT_FRAGMENT_NODE:
+                case Node.ELEMENT_NODE:
+                    for (const childNode of Array.from(content.childNodes)) {
+                        traverseNodes(childNode, callback, includeDescendants);
+                    }
             }
         }
-        return list;
+        return;
     }
-}
+    for (let i = 0, max = content.length; i < max; i++) {
+        traverseNodes(content[i], callback, includeDescendants);
+    }
+};
+const getLastNode = (content) => {
+    if (_.isNil(content)) {
+        return;
+    }
+    if (content instanceof Node) {
+        return content;
+    }
+    for (let i = content.length - 1; i >= 0; i--) {
+        const node = getLastNode(content[i]);
+        if (node) {
+            return node;
+        }
+    }
+};
 
 
 
@@ -870,7 +883,7 @@ class Component extends EventTarget {
     }
 
     async remove() {
-        await remove(this._element);
+        await replaceContent(this._element);
     }
 
     async observe(func, callback, destroyWithNode, info) {
@@ -1054,7 +1067,7 @@ class Component extends EventTarget {
                     await this.observe(async () => {
                         return await this.actual(this.renderValue(attrValue, extraContexts));
                     }, async (result, firstObserve) => {
-                        await remove(node.childNodes);
+                        await replaceContents(node.childNodes);
                         if (!_.isNil(result)) {
                             node.innerHTML = result;
                             !firstObserve && await this.renderNodes(node.childNodes, extraContexts);
@@ -1187,7 +1200,7 @@ class Component extends EventTarget {
             childNode._wiySlots = node._wiySlots;
         }
         list[1] = await this.renderNodes(childNodes, extraContexts);
-        await insertAfter(pointer, list[1]);
+        await replaceContent(null, list[1], pointer);
 
         return list;
     }
@@ -1203,23 +1216,23 @@ class Component extends EventTarget {
         slotInfo.active = true;
         slotInfo.data = slotData;
 
-        const fragment = nodesToDocumentFragment(node.childNodes);
+        const fragment = document.createDocumentFragment();
+        for (const childNode of Array.from(node.childNodes)) {
+            fragment.appendChild(childNode);
+        }
         const pointer = document.createTextNode('');//指示slot默认内容块的位置
         node.appendChild(pointer);
-        let content;
+        let oldContent;
 
         await this.observe(() => {
             return !!slotInfo.assigned;
         }, async (assigned) => {
-            if (content) {//有旧内容
-                await remove(content);//移除旧内容   
-                content = null;
-            }
-
+            let content;
             if (!assigned) {//需要渲染
                 content = await this.renderNode(cloneNode(fragment, true), extraContexts);
-                await insertAfter(pointer, content);
             }
+            await replaceContent(oldContent, content, pointer);
+            oldContent = content;
         }, node, `${slotName} assigned`);
 
         return node;
@@ -1246,7 +1259,7 @@ class Component extends EventTarget {
             ...extraContexts,
             localContext,
         ]);
-        await insertAfter(pointer, list[1]);
+        await replaceContent(null, list[1], pointer);
 
         return list;
     }
@@ -1263,15 +1276,12 @@ class Component extends EventTarget {
         await this.observe(async () => {
             return !!(await this.actual(this.renderValue(condition, extraContexts)));
         }, async (result) => {
-            if (list[1]) {//有旧内容
-                await remove(list[1]);//移除旧内容
-                list[1] = null;
-            }
-
+            let content;
             if (result) {//需要渲染
-                list[1] = await this.renderElement(cloneNode(node, true), extraContexts);
-                await insertAfter(pointer, list[1]);
+                content = await this.renderElement(cloneNode(node, true), extraContexts);
             }
+            await replaceContent(list[1], content, pointer);
+            list[1] = content;
         }, pointer, condition);
 
         return list;
@@ -1291,35 +1301,6 @@ class Component extends EventTarget {
         const pointer = document.createTextNode('');//指示wiy:for块的位置
         node.replaceWith(pointer);
         list.push(pointer);
-
-        const adjustContents = async (oldContents = [], newContents) => {
-            const oldSet = new Set(oldContents);
-            const newSet = new Set(newContents);
-            const toRemoveContents = oldContents.filter(content => !newSet.has(content));
-            if (toRemoveContents.length) {
-                await remove(toRemoveContents);
-            }
-
-            let prevContent = pointer;
-            let toInsertFragments = [];
-            for (const content of newContents) {
-                if (oldSet.has(content)) {//遇到复用内容
-                    if (toInsertFragments.length) {
-                        const lastNode = toNodeList(prevContent).slice(-1)[0];
-                        await insertAfter(lastNode, toInsertFragments);//插入待插入的片段
-                        toInsertFragments = [];
-                    }
-                    prevContent = content;
-                } else {
-                    toInsertFragments.push(content);
-                }
-            }
-            //插入剩余片段
-            if (toInsertFragments.length) {
-                const lastNode = toNodeList(prevContent).slice(-1)[0];
-                await insertAfter(lastNode, toInsertFragments);//插入待插入的片段
-            }
-        };
 
         const map = new Map();//之前渲染好的内容map，key是数组或对象的id，value是之前该id对应的数据
         await this.observe(async () => {
@@ -1379,7 +1360,7 @@ class Component extends EventTarget {
                     }
                 }
 
-                await adjustContents(list[1], contents);
+                await replaceContents(list[1], contents, pointer);
                 list[1] = contents;
             }, pointer, `Object.keys(${forObj})`);
         }, pointer, forObj);
@@ -1416,11 +1397,7 @@ class Component extends EventTarget {
             await this.observe(() => {
                 return !!slotInfo.active;
             }, async (active) => {
-                if (list[1]) {//有旧内容
-                    await remove(list[1]);//移除旧内容
-                    list[1] = null;
-                }
-
+                let content;
                 if (active) {//需要渲染
                     const localContext = tryCreateProxy({});
                     await this.observe(() => {
@@ -1429,17 +1406,18 @@ class Component extends EventTarget {
                         localContext[dataName] = slotData;
                     });
 
-                    list[1] = await this.renderNode(cloneNode(node, true), [
+                    content = await this.renderNode(cloneNode(node, true), [
                         ...extraContexts,
                         localContext,
                     ]);
-                    toNodeList(list[1]).forEach(node => {
+                    traverseNodes(content, node => {
                         if (node.nodeType === Node.ELEMENT_NODE) {
                             node.setAttribute('slot', slotName);
                         }
                     });
-                    await insertAfter(pointer, list[1]);
                 }
+                await replaceContent(list[1], content, pointer);
+                list[1] = content;
             }, pointer, `${slotName} active`);
         }, pointer, slot);
 
