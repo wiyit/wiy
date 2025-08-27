@@ -973,6 +973,9 @@ class Component extends EventTarget {
         if ('wiy:slot' in attrs || 'wiy:slot.data' in attrs) {
             return await this.renderWiySlot(node, extraContexts);
         }
+        if ('wiy:template' in attrs) {
+            return await this.renderWiyTemplate(node, extraContexts);
+        }
 
         const getCommandBindAttrName = (command, attrName) => {
             const prefix = `${command}-`;
@@ -1089,8 +1092,6 @@ class Component extends EventTarget {
                         ...(listeners[eventType] || []),
                         eventHandler,
                     ];
-                } else if (attrName === 'wiy:template') {
-                    node.innerHTML = this.getTemplate(attrValue);
                 } else if (attrName === 'wiy:html') {
                     await this.observe(async () => {
                         return await this.actual(this.renderValue(attrValue, extraContexts));
@@ -1498,6 +1499,23 @@ class Component extends EventTarget {
             destroyWithNode: pointer,
             info: slot,
         });
+
+        return list;
+    }
+
+    async renderWiyTemplate(node, extraContexts = []) {
+        const list = [];
+
+        const templateId = removeAttr(node, 'wiy:template');
+
+        const pointer = document.createTextNode('');//指示wiy:template块的位置
+        node.replaceWith(pointer);
+        list.push(pointer);
+
+        node.innerHTML = this.getTemplate(templateId);
+
+        list[1] = await this.renderElement(node, extraContexts);
+        await replaceContent(null, list[1], pointer);
 
         return list;
     }
