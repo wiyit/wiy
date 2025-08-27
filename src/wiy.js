@@ -680,8 +680,12 @@ class Component extends EventTarget {
         return this._element?.hasAttribute(name);
     }
 
-    hasSlotTemplate(name = '') {
+    isSlotAssigned(name = '') {
         return !!this._config.slots[name]?.assigned;
+    }
+
+    isSlotActive(name = '') {
+        return !!this._config.slots[name]?.active;
     }
 
     on(eventType, listener) {
