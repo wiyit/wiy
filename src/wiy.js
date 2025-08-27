@@ -1066,10 +1066,12 @@ class Component extends EventTarget {
 
         const nodeName = node.nodeName;
         const isSlot = nodeName === 'SLOT';
+        const isTemplate = nodeName === 'TEMPLATE';
         const componentConfig = this.getComponentConfig(nodeName);
         const listeners = {};
         const dataBinders = [];
         const slotData = isSlot ? tryCreateProxy({}) : null;
+        const templateData = isTemplate ? tryCreateProxy({}) : null;
         for (const attrName in attrs) {
             const attrNode = attrs[attrName];
             await this.renderTextOrAttr(attrNode, extraContexts);
@@ -1093,10 +1095,14 @@ class Component extends EventTarget {
                     await this.observe(async () => {
                         return await this.actual(this.renderValue(attrValue, extraContexts));
                     }, async (result, firstObserve) => {
-                        await replaceContents(node.childNodes);
-                        if (!_.isNil(result)) {
-                            node.innerHTML = result;
-                            !firstObserve && await this.renderNodes(node.childNodes, extraContexts);
+                        if (isTemplate) {
+                            templateData.html = result;
+                        } else {
+                            await replaceContents(node.childNodes);
+                            if (!_.isNil(result)) {
+                                node.innerHTML = result;
+                                !firstObserve && await this.renderNodes(node.childNodes, extraContexts);
+                            }
                         }
                     }, {
                         destroyWithNode: node,
@@ -1204,8 +1210,8 @@ class Component extends EventTarget {
 
             if (isSlot) {
                 return await this.renderSlot(node, extraContexts, slotData);
-            } else if (nodeName === 'TEMPLATE') {
-                return await this.renderTemplate(node, extraContexts);
+            } else if (isTemplate) {
+                return await this.renderTemplate(node, extraContexts, templateData);
             } else {
                 await this.renderNodes(node.childNodes, extraContexts);
                 return node;
@@ -1213,7 +1219,7 @@ class Component extends EventTarget {
         }
     }
 
-    async renderTemplate(node, extraContexts = []) {
+    async renderTemplate(node, extraContexts = [], templateData) {
         if (node.id) {
             return node;
         }
@@ -1224,12 +1230,28 @@ class Component extends EventTarget {
         node.replaceWith(pointer);
         list.push(pointer);
 
-        const childNodes = node.content.childNodes;
-        for (const childNode of childNodes) {
-            childNode._wiySlots = node._wiySlots;
+        const render = async () => {
+            const childNodes = node.content.childNodes;
+            for (const childNode of childNodes) {
+                childNode._wiySlots = node._wiySlots;
+            }
+            const content = await this.renderNodes(childNodes, extraContexts);
+            await replaceContent(list[1], content, pointer);
+            list[1] = content;
+        };
+
+        if ('html' in templateData) {
+            await this.observe(() => {
+                return templateData.html;
+            }, async (result) => {
+                node.innerHTML = result;
+                await render();
+            }, {
+                destroyWithNode: pointer,
+            });
+        } else {
+            await render();
         }
-        list[1] = await this.renderNodes(childNodes, extraContexts);
-        await replaceContent(null, list[1], pointer);
 
         return list;
     }
