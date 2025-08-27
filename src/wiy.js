@@ -1008,7 +1008,6 @@ class Component extends EventTarget {
                 case 'wiy:class': return _.kebabCase(name);
                 case 'wiy:style': return _.kebabCase(name);
                 case 'wiy:data': return _.camelCase(name);
-                case 'wiy:method': return _.camelCase(name);
                 default: return name;
             }
         };
@@ -1019,11 +1018,7 @@ class Component extends EventTarget {
             }
 
             await this.observe(async () => {
-                let value = this.renderValue(attrValue, extraContexts);
-                if (command !== 'wiy:method') {
-                    value = await this.actual(value);
-                }
-                return value;
+                return await this.actual(this.renderValue(attrValue, extraContexts));
             }, async (result, firstObserve) => {
                 if (bindAttrName) {
                     await callback(toStandardName(command, bindAttrName), result, firstObserve);
@@ -1189,12 +1184,6 @@ class Component extends EventTarget {
                                 ...(listeners['change'] || []),
                             ];
                         }
-                    }
-                } else if (attrName.startsWith('wiy:method')) {
-                    if (isSlot) {
-                        await processCommand('wiy:method', attrName, attrValue, (key, value) => {
-                            slotData[key] = value;
-                        });
                     }
                 }
             }
