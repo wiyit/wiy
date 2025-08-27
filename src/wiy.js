@@ -886,7 +886,13 @@ class Component extends EventTarget {
         await replaceContent(this._element);
     }
 
-    async observe(func, callback, destroyWithNode, info, throttle = 0) {
+    async observe(func, callback, options = {}) {
+        const {
+            destroyWithNode,
+            info,
+            throttle = 0,
+        } = options;
+
         let throttledCallback = callback;
         if (throttle > 0) {
             throttledCallback = _.throttle(callback, throttle, {
@@ -937,7 +943,10 @@ class Component extends EventTarget {
                 return await this.actual(this.renderString(originNodeValue, extraContexts));
             }, (result) => {
                 node.nodeValue = result;
-            }, node.ownerElement || node, originNodeValue);
+            }, {
+                destroyWithNode: node.ownerElement || node,
+                info: originNodeValue,
+            });
         }
         return node;
     }
@@ -1021,9 +1030,15 @@ class Component extends EventTarget {
                         for (const [key, value] of entries) {
                             await callback(toStandardName(command, key), value, firstObserve && firstObserveOfEntries);
                         }
-                    }, node, `Object.entries(${attrValue})`);
+                    }, {
+                        destroyWithNode: node,
+                        info: `Object.entries(${attrValue})`,
+                    });
                 }
-            }, node, attrValue);
+            }, {
+                destroyWithNode: node,
+                info: attrValue,
+            });
         };
         const bindData = async (attrName, attrValue, callback) => {
             await processCommand('wiy:data', attrName, attrValue, async (key, value, firstObserve) => {
@@ -1079,7 +1094,10 @@ class Component extends EventTarget {
                             node.innerHTML = result;
                             !firstObserve && await this.renderNodes(node.childNodes, extraContexts);
                         }
-                    }, node, attrValue);
+                    }, {
+                        destroyWithNode: node,
+                        info: attrValue,
+                    });
                 } else if (attrName.startsWith('wiy:attr')) {
                     await processCommand('wiy:attr', attrName, attrValue, (key, value) => {
                         if (_.isNil(value)) {
@@ -1240,7 +1258,10 @@ class Component extends EventTarget {
             }
             await replaceContent(oldContent, content, pointer);
             oldContent = content;
-        }, node, `${slotName} assigned`);
+        }, {
+            destroyWithNode: node,
+            info: `${slotName} assigned`,
+        });
 
         return node;
     }
@@ -1260,7 +1281,10 @@ class Component extends EventTarget {
             return await this.actual(this.renderValue(varExpr, extraContexts));
         }, (result) => {
             localContext[varName] = result;
-        }, pointer, varExpr);
+        }, {
+            destroyWithNode: pointer,
+            info: varExpr,
+        });
 
         list[1] = await this.renderElement(node, [
             ...extraContexts,
@@ -1289,7 +1313,10 @@ class Component extends EventTarget {
             }
             await replaceContent(list[1], content, pointer);
             list[1] = content;
-        }, pointer, condition);
+        }, {
+            destroyWithNode: pointer,
+            info: condition,
+        });
 
         return list;
     }
@@ -1342,7 +1369,10 @@ class Component extends EventTarget {
                         localContext[keyName] = key;
                         localContext[valueName] = value;
                         return cache;
-                    }, pointer, `${forObj}[${key}]`);
+                    }, {
+                        destroyWithNode: pointer,
+                        info: `${forObj}[${key}]`,
+                    });
 
                     let {
                         id,
@@ -1369,8 +1399,14 @@ class Component extends EventTarget {
 
                 await replaceContents(list[1], contents, pointer);
                 list[1] = contents;
-            }, pointer, `Object.keys(${forObj})`);
-        }, pointer, forObj);
+            }, {
+                destroyWithNode: pointer,
+                info: `Object.keys(${forObj})`,
+            });
+        }, {
+            destroyWithNode: pointer,
+            info: forObj,
+        });
 
         return list;
     }
@@ -1411,6 +1447,9 @@ class Component extends EventTarget {
                         return slotInfo.data;//观察插槽数据变化
                     }, (slotData) => {
                         localContext[dataName] = slotData;
+                    }, {
+                        destroyWithNode: pointer,
+                        info: `${slotName} data`,
                     });
 
                     content = await this.renderNode(cloneNode(node, true), [
@@ -1425,8 +1464,14 @@ class Component extends EventTarget {
                 }
                 await replaceContent(list[1], content, pointer);
                 list[1] = content;
-            }, pointer, `${slotName} active`);
-        }, pointer, slot);
+            }, {
+                destroyWithNode: pointer,
+                info: `${slotName} active`,
+            });
+        }, {
+            destroyWithNode: pointer,
+            info: slot,
+        });
 
         return list;
     }
