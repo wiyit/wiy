@@ -1865,7 +1865,9 @@ class Router extends EventTarget {
         });
 
         Object.entries(params).forEach(([name, value]) => {//额外传入的参数
-            url.searchParams.set(name, value);
+            if (!_.isNil(value)) {
+                url.searchParams.set(name, value);
+            }
         });
         return url;
     }
