@@ -1852,7 +1852,8 @@ class Router extends EventTarget {
         oldUrl.search = '';
 
         const url = path ? new URL(this._base + path, location) : new URL(location);
-        const newParams = Array.from(url.searchParams.entries());
+        const newParams = path ? Array.from(url.searchParams.entries()) : null;
+        url.search = '';
 
         if (!clearOldParams) {
             oldParams.forEach(([name, value]) => {//原url中的参数
@@ -1860,7 +1861,7 @@ class Router extends EventTarget {
             });
         }
 
-        newParams.forEach(([name, value]) => {//新url中的参数
+        newParams?.forEach(([name, value]) => {//新url中的参数
             url.searchParams.set(name, value);
         });
 
