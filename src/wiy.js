@@ -1024,16 +1024,18 @@ class Component extends EventTarget {
 
             await this.observe(async () => {
                 return await this.actual(this.renderValue(attrValue, extraContexts));
-            }, async ({ result, firstObserve }) => {
+            }, async ({ result, oldResult, firstObserve }) => {
                 if (bindAttrName) {
                     await callback(toStandardName(command, bindAttrName), result, firstObserve);
                 } else {
-                    if (_.isNil(result)) {
-                        return;
-                    }
                     await this.observe(() => {
-                        return Object.entries(result);
+                        return Object.entries(result || {});
                     }, async ({ result: entries, firstObserve: firstObserveOfEntries }) => {
+                        for (let oldKey in oldResult) {//将已删除的属性加入到结果中，对应的值为undefined
+                            if (!(oldKey in result)) {
+                                entries.push([oldKey]);
+                            }
+                        }
                         for (const [key, value] of entries) {
                             await callback(toStandardName(command, key), value, firstObserve && firstObserveOfEntries);
                         }
