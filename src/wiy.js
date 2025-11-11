@@ -922,7 +922,12 @@ class Component extends EventTarget {
                 return;
             }
 
-            const callbackResult = await throttledCallback(result, firstObserve, notifier);
+            const callbackResult = await throttledCallback({
+                result,
+                oldResult,
+                firstObserve,
+                notifier,
+            });
             firstObserve = false;
             oldResult = result;
             return callbackResult;
@@ -945,7 +950,7 @@ class Component extends EventTarget {
         if (originNodeValue?.includes('{{')) {
             await this.observe(async () => {
                 return await this.actual(this.renderString(originNodeValue, extraContexts));
-            }, (result) => {
+            }, ({ result }) => {
                 node.nodeValue = result;
             }, {
                 destroyWithNode: node.ownerElement || node,
@@ -1019,7 +1024,7 @@ class Component extends EventTarget {
 
             await this.observe(async () => {
                 return await this.actual(this.renderValue(attrValue, extraContexts));
-            }, async (result, firstObserve) => {
+            }, async ({ result, firstObserve }) => {
                 if (bindAttrName) {
                     await callback(toStandardName(command, bindAttrName), result, firstObserve);
                 } else {
@@ -1028,7 +1033,7 @@ class Component extends EventTarget {
                     }
                     await this.observe(() => {
                         return Object.entries(result);
-                    }, async (entries, firstObserveOfEntries) => {
+                    }, async ({ result: entries, firstObserve: firstObserveOfEntries }) => {
                         for (const [key, value] of entries) {
                             await callback(toStandardName(command, key), value, firstObserve && firstObserveOfEntries);
                         }
@@ -1090,7 +1095,7 @@ class Component extends EventTarget {
                 } else if (attrName === 'wiy:html') {
                     await this.observe(async () => {
                         return await this.actual(this.renderValue(attrValue, extraContexts));
-                    }, async (result, firstObserve) => {
+                    }, async ({ result, firstObserve }) => {
                         if (isTemplate) {
                             templateData.html = result;
                         } else {
@@ -1233,7 +1238,7 @@ class Component extends EventTarget {
         if ('html' in templateData) {
             await this.observe(() => {
                 return templateData.html;
-            }, async (result) => {
+            }, async ({ result }) => {
                 node.innerHTML = result;
                 await render();
             }, {
@@ -1267,7 +1272,7 @@ class Component extends EventTarget {
 
         await this.observe(() => {
             return !!slotInfo.assigned;
-        }, async (assigned) => {
+        }, async ({ result: assigned }) => {
             let content;
             if (!assigned) {//需要渲染
                 content = await this.renderNode(cloneNode(fragment, true), extraContexts);
@@ -1295,7 +1300,7 @@ class Component extends EventTarget {
         const localContext = tryCreateProxy({});
         await this.observe(async () => {
             return await this.actual(this.renderValue(varExpr, extraContexts));
-        }, (result) => {
+        }, ({ result }) => {
             localContext[varName] = result;
         }, {
             destroyWithNode: pointer,
@@ -1322,7 +1327,7 @@ class Component extends EventTarget {
 
         await this.observe(async () => {
             return !!(await this.actual(this.renderValue(condition, extraContexts)));
-        }, async (result) => {
+        }, async ({ result }) => {
             let content;
             if (result) {//需要渲染
                 content = await this.renderElement(cloneNode(node, true), extraContexts);
@@ -1355,7 +1360,7 @@ class Component extends EventTarget {
         const map = new Map();//之前渲染好的内容map，key是数组或对象的id，value是之前该id对应的数据
         await this.observe(async () => {
             return await this.actual(this.renderValue(forObj, extraContexts));
-        }, async (result) => {
+        }, async ({ result }) => {
             if (_.isNil(result)) {
                 result = [];
             }
@@ -1364,7 +1369,7 @@ class Component extends EventTarget {
 
             await this.observe(() => {
                 return Object.keys(result);
-            }, async (keys) => {
+            }, async ({ result: keys }) => {
                 const contents = [];
                 const ids = new Set();
                 for (let i = 0, max = keys.length; i < max; i++) {
@@ -1373,7 +1378,7 @@ class Component extends EventTarget {
 
                     const cache = await this.observe(async () => {
                         return await this.actual(result[key]);//这一行是为了观察obj中该key对应的value的变化，这样的话当该key对应的value变化时才能被通知
-                    }, (value) => {
+                    }, ({ result: value }) => {
                         const id = idGetter(value, key);
                         const cache = map.get(id) || {
                             id,
@@ -1447,7 +1452,7 @@ class Component extends EventTarget {
 
         await this.observe(() => {
             return this.renderString(slot, extraContexts);
-        }, async (slotName) => {
+        }, async ({ result: slotName }) => {
             let slotInfo = slots[slotName] || {};
             slots[slotName] = slotInfo;
             slotInfo = slots[slotName];//获取响应式对象
@@ -1455,13 +1460,13 @@ class Component extends EventTarget {
 
             await this.observe(() => {
                 return !!slotInfo.active;
-            }, async (active) => {
+            }, async ({ result: active }) => {
                 let content;
                 if (active) {//需要渲染
                     const localContext = tryCreateProxy({});
                     await this.observe(() => {
                         return slotInfo.data;//观察插槽数据变化
-                    }, (slotData) => {
+                    }, ({ result: slotData }) => {
                         localContext[dataName] = slotData;
                     }, {
                         destroyWithNode: pointer,
