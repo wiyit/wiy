@@ -48,7 +48,7 @@ const renderValueInContexts = (expression, contexts = []) => {
 
     const renderFunction = new Function(paramNames, `
         'use strict';
-		return ${expression};
+		return ${expression?.trim()};
 	`);
     return renderFunction.apply(thisObj, paramValues);
 };
