@@ -948,8 +948,8 @@ class Component extends EventTarget {
     async renderTextOrAttr(node, extraContexts = []) {
         const originNodeValue = node.nodeValue;
         if (originNodeValue?.includes('{{')) {
-            await this.observe(async () => {
-                return await this.actual(this.renderString(originNodeValue, extraContexts));
+            await this.observe(() => {
+                return this.renderString(originNodeValue, extraContexts);
             }, ({ result }) => {
                 node.nodeValue = result;
             }, {
@@ -1072,12 +1072,18 @@ class Component extends EventTarget {
         const nodeName = node.nodeName;
         const isSlot = nodeName === 'SLOT';
         const isTemplate = nodeName === 'TEMPLATE';
-        const componentConfig = this.getComponentConfig(nodeName);
+        const isWiyComponent = nodeName === 'WIY-COMPONENT';
+        const isComponent = isWiyComponent || !!this.getComponentConfig(nodeName);
         const listeners = {};
         const dataBinders = [];
         const slotData = isSlot ? tryCreateProxy({}) : null;
         const templateData = isTemplate ? tryCreateProxy({}) : null;
         for (const attrName in attrs) {
+            if (isWiyComponent) {
+                if (attrName === 'name') {
+                    continue;
+                }
+            }
             const attrNode = attrs[attrName];
             await this.renderTextOrAttr(attrNode, extraContexts);
             if (attrName.startsWith('wiy:')) {
@@ -1142,7 +1148,7 @@ class Component extends EventTarget {
                     }
                     const key = toStandardName('wiy:data', bindAttrName);
 
-                    if (componentConfig) {//组件
+                    if (isComponent) {//组件
                         dataBinders.push(async (component) => {
                             await bindData(attrName, attrValue, (key, value) => {
                                 component[key] = value;
@@ -1196,7 +1202,7 @@ class Component extends EventTarget {
             }
         }
 
-        if (componentConfig) {
+        if (isComponent) {
             return await this.renderComponent(node, extraContexts, listeners, dataBinders);
         } else {
             Object.entries(listeners).forEach(([name, value]) => {
@@ -1538,34 +1544,57 @@ class Component extends EventTarget {
     }
 
     async renderComponent(node, extraContexts = [], listeners, dataBinders) {
-        const slots = tryCreateProxy({});
+        const list = [];
 
-        for (const childNode of Array.from(node.childNodes)) {
-            childNode._wiySlots = slots;
-            if (childNode.nodeType === Node.ELEMENT_NODE) {
-                await this.renderElement(childNode, extraContexts);
-            } else {
-                await this.renderWiySlot(childNode, extraContexts);
+        const isWiyComponent = node.nodeName === 'WIY-COMPONENT';
+        const componentName = isWiyComponent ? removeAttr(node, 'name') : node.nodeName;
+
+        const pointer = document.createTextNode('');//指示组件块的位置
+        node.replaceWith(pointer);
+        list.push(pointer);
+
+        await this.observe(() => {
+            return this.renderString(componentName, extraContexts);
+        }, async ({ result }) => {
+            const config = this.getComponentConfig(result);
+            if (!config) {
+                throw new Error(`组件${result}未定义`);
             }
-        }
 
-        const define = await loadComponentDefine(this.getComponentConfig(node.nodeName));
-        const component = new Component({
-            ...define,
-            listeners,
-            dataBinders,
-            slots,
-            app: this._config.app,
+            const content = cloneNode(node, true);
+            isWiyComponent && content.setAttribute('name', result);
+            const slots = tryCreateProxy({});
+
+            for (const childNode of Array.from(content.childNodes)) {
+                childNode._wiySlots = slots;
+                if (childNode.nodeType === Node.ELEMENT_NODE) {
+                    await this.renderElement(childNode, extraContexts);
+                } else {
+                    await this.renderWiySlot(childNode, extraContexts);
+                }
+            }
+
+            const define = await loadComponentDefine(config);
+            const component = new Component({
+                ...define,
+                listeners,
+                dataBinders,
+                slots,
+                app: this._config.app,
+            });
+            this.addChild(component);
+
+            component.on('init', async () => {
+                await component.mount(content);
+            });
+            await replaceContent(list[1], content, pointer);
+            list[1] = content;
+        }, {
+            destroyWithNode: pointer,
+            info: componentName,
         });
-        this.addChild(component);
 
-        node.style.setProperty('visibility', 'hidden');
-        component.on('init', async () => {
-            await component.mount(node);
-            node.style.removeProperty('visibility');
-        });
-
-        return node;
+        return list;
     }
 
     renderString(template, extraContexts = []) {
