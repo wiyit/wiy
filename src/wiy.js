@@ -829,7 +829,7 @@ class Component extends EventTarget {
             root.innerHTML = await loadSourceString(this._config.template) || '';
             const style = document.createElement('style');
             style.innerHTML = await loadSourceString(this._config.style) || '';
-            root.prepend(style);
+            root.append(style);
 
             await this.executeLifecycle('beforeRender');
             await this.renderNodes(root.childNodes);
