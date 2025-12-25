@@ -642,7 +642,7 @@ class Component extends EventTarget {
         });
         Object.entries(this._config.listeners || {}).forEach(([name, value]) => {
             value.forEach(listener => {
-                this.on(name, listener);
+                this.on(name, listener.bind(this._proxyThis));
             });
         });
         let data = this._config.data;
@@ -800,7 +800,7 @@ class Component extends EventTarget {
             element.setAttribute('uuid', this._uuid);
             Object.entries(this._config.listeners || {}).forEach(([name, value]) => {
                 value.forEach(listener => {
-                    element.addEventListener(name, listener);
+                    element.addEventListener(name, listener.bind(this._proxyThis));
                 });
             });
 
@@ -1588,6 +1588,10 @@ class Component extends EventTarget {
         const componentName = isWiyComponent ? node.getAttribute('name') : node.nodeName;
 
         const define = await loadComponentDefine(this.getComponentConfig(componentName));
+        Object.entries(define.listeners || {}).forEach(([eventType, listener]) => {
+            listeners[eventType] = listeners[eventType] || [];
+            listeners[eventType].push(listener);
+        });
         const component = new Component({
             ...define,
             listeners,
