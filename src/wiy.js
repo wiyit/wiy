@@ -400,7 +400,7 @@ const tryCreateProxy = (obj) => {
                     value = tryCreateProxy(value);
                     if (!has
                         || (Array.isArray(target) && prop === 'length')
-                        || value !== Reflect.get(target, prop)) {
+                        || !Object.is(value, Reflect.get(target, prop))) {
                         OBSERVER_MANAGER.notify(target, prop, !has);
                     }
                 }
@@ -918,7 +918,7 @@ class Component extends EventTarget {
             if (result instanceof Promise) {
                 result = await result;
             }
-            if (!firstObserve && !_.isObject(result) && oldResult === result) {
+            if (!firstObserve && !_.isObject(result) && Object.is(oldResult, result)) {
                 return;
             }
 
