@@ -1036,9 +1036,11 @@ class Component extends EventTarget {
                     await this.observe(() => {
                         return Object.entries(result || {});
                     }, async ({ result: entries, firstObserve: firstObserveOfEntries }) => {
-                        for (let oldKey in oldResult) {//将已删除的属性加入到结果中，对应的值为undefined
-                            if (!(oldKey in result)) {
-                                entries.push([oldKey]);
+                        if (!_.isNil(oldResult)) {
+                            for (let oldKey in oldResult) {//将已删除的属性加入到结果中，对应的值为undefined
+                                if (_.isNil(result) || !(oldKey in result)) {
+                                    entries.push([oldKey]);
+                                }
                             }
                         }
                         for (const [key, value] of entries) {
