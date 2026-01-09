@@ -830,10 +830,8 @@ class Component extends EventTarget {
             root.append(pointer);
 
             const templateElement = document.createElement('template');
-            templateElement.innerHTML = `
-                ${await loadSourceString(this._config.template) || ''}
-                <style>${await loadSourceString(this._config.style) || ''}</style>
-            `;
+            templateElement.innerHTML = (await loadSourceString(this._config.template) || '')
+                + `<style>${await loadSourceString(this._config.style) || ''}</style>`;
 
             await this.executeLifecycle('beforeRender');
             const content = await this.renderTemplate(templateElement);
