@@ -826,14 +826,20 @@ class Component extends EventTarget {
                 },
             });
 
-            root.innerHTML = await loadSourceString(this._config.template) || '';
-            const style = document.createElement('style');
-            style.innerHTML = await loadSourceString(this._config.style) || '';
-            root.append(style);
+            const pointer = document.createTextNode('');//指示组件内容块的位置
+            root.append(pointer);
+
+            const templateElement = document.createElement('template');
+            templateElement.innerHTML = `
+                ${await loadSourceString(this._config.template) || ''}
+                <style>${await loadSourceString(this._config.style) || ''}</style>
+            `;
 
             await this.executeLifecycle('beforeRender');
-            await this.renderNodes(root.childNodes);
+            const content = await this.renderTemplate(templateElement);
             await this.executeLifecycle('render');
+
+            await replaceContent(null, content, pointer);
         }
 
         await this.executeLifecycle('mount');
@@ -1244,7 +1250,7 @@ class Component extends EventTarget {
             list[1] = content;
         };
 
-        if ('html' in templateData) {
+        if (templateData && 'html' in templateData) {
             await this.observe(() => {
                 return templateData.html;
             }, async ({ result }) => {
